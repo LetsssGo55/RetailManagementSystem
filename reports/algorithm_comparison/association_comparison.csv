@@ -1,0 +1,4 @@
+algorithm,training_baskets,validation_baskets,min_support,min_confidence,min_lift,frequent_itemsets_total,frequent_singletons,frequent_pairs,itemsets_3_plus,qualifying_rules,median_runtime_seconds,python_tracemalloc_peak_mib,validation_rule_coverage,validation_mean_support,validation_mean_confidence,validation_mean_lift,validation_weighted_cooccurrence_rate
+"FP-Growth (reference FP-tree)",2250,750,0.02,0.3,1.2,72,65,7,0,12,0.05397960800002011,1.2974472045898438,0.52,0.02033333333333333,0.3005511307292786,4.285181995629798,0.3128205128205128
+"Apriori (reference)",2250,750,0.02,0.3,1.2,72,65,7,0,12,0.2277019189999976,0.6839866638183594,0.52,0.02033333333333333,0.3005511307292786,4.285181995629797,0.3128205128205128
+"ECLAT (reference)",2250,750,0.02,0.3,1.2,72,65,7,0,12,0.008028961999997364,0.5977745056152344,0.52,0.02033333333333334,0.3005511307292786,4.285181995629797,0.3128205128205128

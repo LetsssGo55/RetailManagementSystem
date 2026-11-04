@@ -420,3 +420,22 @@ Five Plotly-interactive tabs over cached data loaders:
 ---
 
 *Phase 10 complete — 135/135 tests passing. Full decision-support loop now visible end to end in the browser. Next: Phase 11 (testing & QA hardening).*
+
+
+## Comparative Algorithm Evaluation (Research Benchmark)
+
+ArthaMart includes a reproducible research benchmark comparing:
+
+- **Product segmentation:** K-Means vs Agglomerative Ward vs Gaussian Mixture.
+- **Market-basket mining:** reference FP-Growth vs Apriori vs ECLAT.
+
+The experiment reads the generated SQLite database and writes JSON/CSV evidence under `reports/algorithm_comparison/`. The benchmark is separate from the production application: the existing K-Means and MLxtend FP-Growth modules are not changed by running it.
+
+Run from the project root:
+
+```powershell
+python experiments/run_algorithm_comparison.py --db data/arthamart.db --repeats 5
+python -m pytest tests/test_algorithm_comparison.py -q
+```
+
+Read [the comparative evaluation](reports/algorithm_comparison/COMPARATIVE_EVALUATION.md) for the experimental design, measured scores, conclusions, limitations and references. The SQLite database remains excluded from Git; regenerate it using `python main.py setup` before rerunning and compare its SHA-256 with the report to confirm the same snapshot.

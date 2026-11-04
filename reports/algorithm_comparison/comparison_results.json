@@ -1,0 +1,147 @@
+{
+  "experiment": "ArthaMart clustering and frequent-itemset algorithm comparison",
+  "experiment_date": "2026-11-04",
+  "baseline_commit": "39b68a05b2079d1eb104044ed13b82453a5f5600",
+  "environment": {
+    "python": "3.13.5",
+    "numpy": "2.3.5",
+    "pandas": "2.2.3",
+    "scikit_learn": "1.8.0"
+  },
+  "seed": 42,
+  "timing_repeats": 5,
+  "database": {
+    "filename": "arthamart.db",
+    "sha256": "d9d40d7fc2102b1fc967da0515b9524deb4ba0d023a46e74b259e798453187b3",
+    "products": 65,
+    "daily_sales_records": 11700,
+    "customer_orders": 3004,
+    "order_line_items": 10812,
+    "completed_synthetic_pos_baskets": 3000,
+    "training_baskets": 2250,
+    "validation_baskets": 750,
+    "first_order_date": "2025-08-01",
+    "last_order_date": "2026-01-27",
+    "average_basket_size": 3.598
+  },
+  "clustering": {
+    "features": [
+      "avg_daily_sales",
+      "velocity",
+      "revenue",
+      "days_with_sales"
+    ],
+    "scale": "StandardScaler",
+    "clusters": 3,
+    "reference_labels": "Synthetic category-velocity mapping; not independently human-labelled.",
+    "results": [
+      {
+        "algorithm": "K-Means",
+        "silhouette": 0.3464788825821323,
+        "davies_bouldin": 0.9807250760132508,
+        "calinski_harabasz": 37.78091412803264,
+        "ari": 0.6266417270213448,
+        "nmi": 0.5864470189260486,
+        "stability_ari": 0.9668210812252915,
+        "median_fit_seconds": 0.011300104999975247,
+        "tracemalloc_peak_mib": 0.018705368041992188,
+        "cluster_sizes": "FAST=12;MEDIUM=46;SLOW=7"
+      },
+      {
+        "algorithm": "Agglomerative (Ward)",
+        "silhouette": 0.41106086145011583,
+        "davies_bouldin": 0.7741442616485252,
+        "calinski_harabasz": 36.40527584861099,
+        "ari": 0.5179391352715137,
+        "nmi": 0.5171626074741551,
+        "stability_ari": 1,
+        "median_fit_seconds": 0.0010528009999859478,
+        "tracemalloc_peak_mib": 0.030305862426757812,
+        "cluster_sizes": "SLOW=7;MEDIUM=52;FAST=6"
+      },
+      {
+        "algorithm": "Gaussian Mixture",
+        "silhouette": 0.3365713852891106,
+        "davies_bouldin": 1.2497014627240153,
+        "calinski_harabasz": 31.678512935750597,
+        "ari": 0.5207748032551567,
+        "nmi": 0.5307657339919222,
+        "stability_ari": 1,
+        "median_fit_seconds": 0.3927193920000036,
+        "tracemalloc_peak_mib": 0.024847984313964844,
+        "cluster_sizes": "SLOW=9;MEDIUM=39;FAST=17",
+        "aic": 510.1532107969195,
+        "bic": 605.8262506723275,
+        "converged": true,
+        "n_iter": 7
+      }
+    ]
+  },
+  "association_mining": {
+    "filter": "source='pos' AND status='COMPLETED'; OCR demo orders excluded",
+    "chronological_split": "75% train / 25% validation",
+    "min_support": 0.02,
+    "min_confidence": 0.3,
+    "min_lift": 1.2,
+    "rule_shape": "single-item -> single-item",
+    "exact_itemset_support_equivalence": true,
+    "results": [
+      {
+        "algorithm": "FP-Growth (reference FP-tree)",
+        "frequent_itemsets": 72,
+        "singletons": 65,
+        "pairs": 7,
+        "itemsets_3_plus": 0,
+        "rules": 12,
+        "median_runtime_seconds": 0.05397960800002011,
+        "python_tracemalloc_peak_mib": 1.2974472045898438,
+        "validation_coverage": 0.52,
+        "mean_support": 0.02033333333333333,
+        "mean_confidence": 0.3005511307292786,
+        "mean_lift": 4.285181995629798,
+        "weighted_cooccurrence_rate": 0.3128205128205128
+      },
+      {
+        "algorithm": "Apriori (reference)",
+        "frequent_itemsets": 72,
+        "singletons": 65,
+        "pairs": 7,
+        "itemsets_3_plus": 0,
+        "rules": 12,
+        "median_runtime_seconds": 0.2277019189999976,
+        "python_tracemalloc_peak_mib": 0.6839866638183594,
+        "validation_coverage": 0.52,
+        "mean_support": 0.02033333333333333,
+        "mean_confidence": 0.3005511307292786,
+        "mean_lift": 4.285181995629797,
+        "weighted_cooccurrence_rate": 0.3128205128205128
+      },
+      {
+        "algorithm": "ECLAT (reference)",
+        "frequent_itemsets": 72,
+        "singletons": 65,
+        "pairs": 7,
+        "itemsets_3_plus": 0,
+        "rules": 12,
+        "median_runtime_seconds": 0.008028961999997364,
+        "python_tracemalloc_peak_mib": 0.5977745056152344,
+        "validation_coverage": 0.52,
+        "mean_support": 0.02033333333333334,
+        "mean_confidence": 0.3005511307292786,
+        "mean_lift": 4.285181995629797,
+        "weighted_cooccurrence_rate": 0.3128205128205128
+      }
+    ]
+  },
+  "selection": {
+    "clustering": "Retain K-Means in the current application; Agglomerative Ward has better geometric separation but lower agreement with synthetic tier labels.",
+    "association": "Retain production MLxtend FP-Growth until a like-for-like production-library ECLAT comparison is performed; ECLAT was fastest only among reference implementations."
+  },
+  "limitations": [
+    "Synthetic data only; no validation against real retailers.",
+    "ARI/NMI use generated category-velocity reference tiers, not independent human labels.",
+    "Baskets are unordered; holdout scores describe co-occurrence, not next-item prediction.",
+    "tracemalloc is not total process RSS.",
+    "FP-Growth benchmark is a reference FP-tree implementation, not production MLxtend."
+  ]
+}
