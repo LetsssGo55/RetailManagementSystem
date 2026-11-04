@@ -1,0 +1,104 @@
+# ArthaMart — Central Configuration
+# All business rules live here. NO magic numbers in code.
+# Design and Development of an Intelligent Retailing Application:
+# Reinventing Retail Operations with Intelligent Forecasting and Personalisation
+
+project:
+  name: "ArthaMart"
+  full_title: "Design and Development of an Intelligent Retailing Application: Reinventing Retail Operations with Intelligent Forecasting and Personalisation"
+  version: "1.4.4"
+  seed: 42
+
+# ── Synthetic data generation ───────────────────────────────
+data:
+  n_products: 65
+  n_days: 180
+  n_transactions: 3000
+  start_date: "2025-08-01"
+
+# ── OCR pipeline ────────────────────────────────────────────
+ocr:
+  similarity_threshold: 72      # RapidFuzz minimum match score (%)
+  review_floor: 55              # Below this → UNMATCHED; between → REVIEW
+  tesseract_config: "--psm 6"  # Assume uniform block of text
+  preprocessing:
+    denoise_strength: 10
+    otsu: true
+    deskew: true
+
+# ── Demand forecasting ──────────────────────────────────────
+forecasting:
+  algorithm: "random_forest"
+  n_estimators: 200
+  max_depth: 12
+  random_state: 42
+  test_days: 36                # Last 36 days held out
+  forecast_horizon: 7          # Predict next 7 days
+  lags: [1, 7, 14]
+  windows: [7, 14, 28]
+
+# ── Product segmentation ────────────────────────────────────
+clustering:
+  algorithm: "kmeans"
+  k: 3
+  random_state: 42
+  tiers: ["SLOW", "MEDIUM", "FAST"]
+
+# ── Market basket analysis ──────────────────────────────────
+basket:
+  algorithm: "fpgrowth"
+  min_support: 0.02              # pair supports in data span 0.021–0.043
+  min_lift: 1.2
+  min_confidence: 0.3
+  bundle_discount_pct: 10
+  bundle_uplift_pct: 8           # demand uplift for BUNDLE consequents
+  cross_promote_uplift_pct: 5    # demand uplift for CROSS-PROMOTE consequents
+
+# ── Inventory optimisation ──────────────────────────────────
+inventory:
+  ordering_cost: 150.0         # ₹ per order
+  holding_cost_pct: 0.18       # 18% of unit cost / year
+  lead_time_days: 3
+  service_level_z: 1.65        # 95% service level
+  reorder_priority_weight: 2   # misses × this weight + 7-day forecast
+
+# ── Pricing ─────────────────────────────────────────────────
+pricing:
+  mrp_markdown_ladder:         # days_to_expiry -> discount %
+    - {max_days: 3,  discount: 35}
+    - {max_days: 7,  discount: 20}
+    - {max_days: 14, discount: 10}
+    - {max_days: 999, discount: 0}
+  tier_shift_days:             # expiry timing shift per cluster tier
+    SLOW: -4                   # slow movers markdown earlier
+    MEDIUM: 0
+    FAST: 2                    # fast movers hold full price longer
+  bulk_base_margin_pct: 18     # Base margin for loose/bulk goods
+  bulk_margin_adjust_range: 8  # ±8% adjustment based on demand
+  price_floor_pct: 90          # Never below 90% of wholesale cost
+  daily_move_cap_pct: 15       # max ±15% bulk price move vs previous day
+  seasonal_pp: 2.0             # +margin points in festival months
+  demand_pp_per_5pct: 1.0      # +1 margin point per +5% demand uplift
+
+# ── Personalisation engine ──────────────────────────────────
+personalisation:
+  recommendation_algorithm: "collaborative_filtering"
+  top_n: 5                     # Recommendations per customer
+  min_purchase_history: 2      # Min purchases to personalise
+  cross_sell_lift_threshold: 1.5
+  segmentation_tiers: ["NEW", "REGULAR", "VIP", "AT_RISK"]
+  vip_threshold_spend: 39000     # ≈ top 10% of customer spend
+  at_risk_days_inactive: 21
+
+# ── Policy simulation ───────────────────────────────────────
+# ── Calendar / seasonality ─────────────────────────────────
+calendar:
+  festival_months: [8, 10, 11, 1]   # Aug, Oct (Diwali), Nov, Jan (Sankranti)
+  seasonal_period: 7
+
+simulation:
+  naive_markdown_days: 3       # Naive: markdown only when ≤3 days to expiry
+  naive_reorder_qty: 50        # Naive: fixed reorder quantity
+  naive_reorder_threshold: 20  # Naive: reorder when stock below this
+  demand_elasticity: -1.2      # Price elasticity of demand
+  cover_cap_days: 30           # max demand-cover per order (perishables)

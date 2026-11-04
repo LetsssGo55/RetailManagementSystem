@@ -1,0 +1,10 @@
+# ArthaMart dashboard theme (Phase 12 polish)
+[theme]
+primaryColor = "#4F46E5"
+backgroundColor = "#F7F8FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1B2340"
+font = "sans serif"
+
+[server]
+headless = true

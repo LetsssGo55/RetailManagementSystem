@@ -1,0 +1,36 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Generated documents
+data/invoices/*
+data/procurement/*
+data/simulation/*
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/

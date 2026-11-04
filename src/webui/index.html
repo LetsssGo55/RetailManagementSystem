@@ -1,0 +1,798 @@
+<!doctype html>
+<!-- ArthaMart — shadcn-style UI, CONNECTED to the live backend (server.py). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArthaMart — Retail Intelligence</title>
+<style>
+/* ------------------------------------------------------------------ */
+/* shadcn-style design tokens                                          */
+/* ------------------------------------------------------------------ */
+:root{
+  --background:0 0% 100%;        --foreground:240 10% 3.9%;
+  --card:0 0% 100%;              --card-foreground:240 10% 3.9%;
+  --muted:240 4.8% 95.9%;        --muted-foreground:240 3.8% 46.1%;
+  --border:240 5.9% 90%;         --input:240 5.9% 90%;
+  --primary:240 5.9% 10%;        --primary-foreground:0 0% 98%;
+  --secondary:240 4.8% 95.9%;    --secondary-foreground:240 5.9% 10%;
+  --accent:240 4.8% 95.9%;       --accent-foreground:240 5.9% 10%;
+  --destructive:0 84.2% 60.2%;   --ring:240 5% 64.9%;
+  --success:142 71% 45%;         --warning:38 92% 50%;
+  --radius:.5rem;
+  --chart-1:240 5.9% 10%;        --chart-2:142 71% 45%;
+}
+.dark{
+  --background:240 10% 3.9%;     --foreground:0 0% 98%;
+  --card:240 10% 5.5%;           --card-foreground:0 0% 98%;
+  --muted:240 3.7% 15.9%;        --muted-foreground:240 5% 64.9%;
+  --border:240 3.7% 15.9%;       --input:240 3.7% 15.9%;
+  --primary:0 0% 98%;            --primary-foreground:240 5.9% 10%;
+  --secondary:240 3.7% 15.9%;    --secondary-foreground:0 0% 98%;
+  --accent:240 3.7% 15.9%;       --accent-foreground:0 0% 98%;
+  --ring:240 4.9% 83.9%;
+  --chart-1:0 0% 98%;            --chart-2:142 71% 45%;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,
+    "Helvetica Neue",Arial,sans-serif;
+  background:hsl(var(--background)); color:hsl(var(--foreground));
+  font-size:14px; -webkit-font-smoothing:antialiased;
+}
+svg{display:block}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+
+/* ------------------------------------------------------------------ */
+/* layout: sidebar-01                                                  */
+/* ------------------------------------------------------------------ */
+.shell{display:flex;min-height:100vh}
+.sidebar{
+  width:264px;flex-shrink:0;border-right:1px solid hsl(var(--border));
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+  background:hsl(var(--background));
+}
+.side-head{display:flex;align-items:center;gap:.6rem;padding:1rem 1rem .75rem}
+.logo-box{width:32px;height:32px;border-radius:var(--radius);
+  background:hsl(var(--primary));color:hsl(var(--primary-foreground));
+  display:grid;place-items:center}
+.dark .logo-box{background:#3b82f6;color:#fff}
+.brand{font-weight:700;letter-spacing:-.02em}
+.ver{margin-left:auto;font-size:11px;color:hsl(var(--muted-foreground));
+  border:1px solid hsl(var(--border));border-radius:9999px;padding:1px 8px}
+.side-nav{flex:1;overflow-y:auto;padding:.25rem .5rem 1rem}
+.nav-group{margin-top:.9rem}
+.nav-label{padding:0 .5rem .35rem;font-size:11px;font-weight:600;
+  color:hsl(var(--muted-foreground));letter-spacing:.04em;text-transform:uppercase}
+.nav-item{
+  display:flex;align-items:center;gap:.6rem;width:100%;
+  padding:.42rem .5rem;border-radius:var(--radius);
+  color:hsl(var(--muted-foreground));font-weight:500;text-align:left;
+}
+.nav-item:hover{background:hsl(var(--accent));color:hsl(var(--accent-foreground))}
+.nav-item.active{background:hsl(var(--secondary));color:hsl(var(--foreground));font-weight:600}
+.nav-item .badge-count{margin-left:auto;font-size:11px;
+  background:hsl(var(--muted));border-radius:9999px;padding:0 7px;
+  color:hsl(var(--muted-foreground))}
+.side-foot{border-top:1px solid hsl(var(--border));padding:.75rem}
+.user-card{display:flex;align-items:center;gap:.6rem;border-radius:var(--radius);
+  padding:.4rem .5rem}
+.user-card:hover{background:hsl(var(--accent))}
+.avatar{width:32px;height:32px;border-radius:50%;background:#3b82f6;color:#fff;
+  display:grid;place-items:center;font-weight:700;font-size:12px}
+.user-name{font-weight:600;font-size:13px}
+.user-mail{font-size:11px;color:hsl(var(--muted-foreground))}
+
+/* ------------------------------------------------------------------ */
+/* main                                                                */
+/* ------------------------------------------------------------------ */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{
+  display:flex;align-items:center;gap:.75rem;padding:.65rem 1.25rem;
+  border-bottom:1px solid hsl(var(--border));position:sticky;top:0;
+  background:hsl(var(--background));z-index:5;
+}
+.crumb{font-size:13px;color:hsl(var(--muted-foreground))}
+.crumb b{color:hsl(var(--foreground));font-weight:600}
+.search{
+  margin-left:auto;display:flex;align-items:center;gap:.5rem;
+  border:1px solid hsl(var(--input));border-radius:var(--radius);
+  padding:.38rem .6rem;width:240px;color:hsl(var(--muted-foreground));
+  background:hsl(var(--background));
+}
+.icon-btn{border:1px solid hsl(var(--border));border-radius:var(--radius);
+  width:32px;height:32px;display:grid;place-items:center;
+  color:hsl(var(--muted-foreground))}
+.icon-btn:hover{background:hsl(var(--accent))}
+.content{padding:1.25rem;display:flex;flex-direction:column;gap:1rem}
+
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.page-head h1{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.page-head p{color:hsl(var(--muted-foreground));font-size:13px;margin-top:2px}
+.btn{display:inline-flex;align-items:center;gap:.45rem;border-radius:var(--radius);
+  padding:.42rem .8rem;font-weight:600;font-size:13px;
+  background:hsl(var(--primary));color:hsl(var(--primary-foreground))}
+.btn:hover{opacity:.92}
+.btn.outline{background:transparent;color:hsl(var(--foreground));
+  border:1px solid hsl(var(--border))}
+.btn.outline:hover{background:hsl(var(--accent))}
+
+/* cards / stats ------------------------------------------------------ */
+.grid{display:grid;gap:1rem}
+.grid.cols-4{grid-template-columns:repeat(4,1fr)}
+.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+.grid.cols-2{grid-template-columns:2fr 1fr}
+@media (max-width:1100px){.grid.cols-4{grid-template-columns:repeat(2,1fr)}
+  .grid.cols-3,.grid.cols-2{grid-template-columns:1fr}}
+.card{background:hsl(var(--card));border:1px solid hsl(var(--border));
+  border-radius:var(--radius);box-shadow:0 1px 2px rgb(0 0 0 / .04)}
+.card-h{display:flex;align-items:center;justify-content:space-between;
+  padding:.9rem 1rem .2rem}
+.card-h h3{font-size:14px;font-weight:600}
+.card-h p{font-size:12px;color:hsl(var(--muted-foreground))}
+.card-b{padding:.4rem 1rem 1rem}
+.stat{padding:1rem}
+.stat .lbl{font-size:13px;font-weight:500;color:hsl(var(--muted-foreground));
+  display:flex;align-items:center;gap:.4rem}
+.stat .val{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-top:.35rem}
+.stat .delta{font-size:12px;margin-top:.3rem;color:hsl(var(--muted-foreground))}
+.delta .up{color:hsl(var(--success));font-weight:600}
+.delta .down{color:hsl(var(--destructive));font-weight:600}
+
+/* table --------------------------------------------------------------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:hsl(var(--muted-foreground));
+  padding:.55rem 1rem;border-bottom:1px solid hsl(var(--border));
+  background:hsl(var(--muted));}
+th:first-child{border-radius:var(--radius) 0 0 0}
+th:last-child{border-radius:0 var(--radius) 0 0}
+td{padding:.6rem 1rem;border-bottom:1px solid hsl(var(--border))}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:hsl(var(--muted))}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-flex;align-items:center;border-radius:9999px;
+  padding:1px 9px;font-size:11px;font-weight:600;
+  background:hsl(var(--secondary));color:hsl(var(--secondary-foreground))}
+.badge.green{background:hsl(var(--success) / .12);color:hsl(var(--success))}
+.badge.red{background:hsl(var(--destructive) / .12);color:hsl(var(--destructive))}
+.badge.amber{background:hsl(var(--warning) / .14);color:hsl(var(--warning))}
+
+/* decision cards ------------------------------------------------------ */
+.dcard{padding:.9rem 1rem;display:flex;flex-direction:column;gap:.45rem}
+.dcard .top{display:flex;align-items:center;gap:.55rem}
+.dot{width:8px;height:8px;border-radius:50%}
+.dcard .t{font-weight:600}
+.dcard .amt{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.dcard .why{font-size:12.5px;color:hsl(var(--muted-foreground))}
+.dcard .row{display:flex;gap:.5rem;align-items:center}
+
+/* charts (inline svg) -------------------------------------------------- */
+.chart{width:100%;height:auto}
+.legend{display:flex;gap:1rem;font-size:12px;color:hsl(var(--muted-foreground));
+  padding:0 1rem .9rem}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;
+  margin-right:5px;vertical-align:middle}
+
+.view{display:none}
+.view.active{display:flex;flex-direction:column;gap:1rem}
+.muted{color:hsl(var(--muted-foreground))}
+.empty{padding:2.5rem;text-align:center;color:hsl(var(--muted-foreground));
+  font-size:13px}
+/* chat */
+.chat-log{display:flex;flex-direction:column;gap:.6rem;max-height:430px;
+  overflow-y:auto;padding:.4rem .2rem}
+.msg{max-width:78%;border-radius:var(--radius);padding:.55rem .8rem;
+  font-size:13.5px;line-height:1.5;white-space:pre-wrap}
+.msg.user{align-self:flex-end;background:hsl(var(--primary));
+  color:hsl(var(--primary-foreground))}
+.msg.bot{align-self:flex-start;background:hsl(var(--muted));
+  color:hsl(var(--foreground));border:1px solid hsl(var(--border))}
+.chat-in{display:flex;gap:.5rem;margin-top:.7rem}
+.chat-in input{flex:1;border:1px solid hsl(var(--input));
+  border-radius:var(--radius);background:transparent;
+  color:hsl(var(--foreground));padding:.5rem .7rem;font:inherit}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem}
+.chip{border:1px solid hsl(var(--border));border-radius:9999px;
+  padding:.25rem .7rem;font-size:12px;color:hsl(var(--muted-foreground))}
+.chip:hover{background:hsl(var(--accent));color:hsl(var(--accent-foreground))}
+select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
+  background:hsl(var(--card));color:hsl(var(--foreground));
+  padding:.35rem .5rem;font:inherit}
+
+/* login overlay */
+.login-wrap{position:fixed;inset:0;display:grid;place-items:center;
+  background:hsl(var(--background));z-index:50}
+.login-card{width:380px;padding:1.8rem;border:1px solid hsl(var(--border));
+  border-radius:calc(var(--radius) + 4px);background:hsl(var(--card));
+  box-shadow:0 10px 40px rgb(0 0 0 / .08);display:flex;flex-direction:column;gap:.9rem}
+.login-card .lb{display:flex;align-items:center;gap:.6rem}
+.field input{width:100%;border:1px solid hsl(var(--input));border-radius:var(--radius);
+  background:transparent;color:hsl(var(--foreground));padding:.5rem .7rem;font:inherit}
+.field input:focus{outline:2px solid hsl(var(--ring));outline-offset:1px}
+.field label{font-size:12.5px;font-weight:600;display:block;margin-bottom:.3rem}
+.err{color:hsl(var(--destructive));font-size:12.5px;min-height:1em}
+</style>
+</head>
+<body>
+
+<!-- ======================= LOGIN ======================= -->
+<div class="login-wrap" id="login">
+  <form class="login-card" id="login-form">
+    <div class="lb">
+      <div class="logo-box">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+      </div>
+      <div><span class="brand">ArthaMart</span>
+        <div class="user-mail">Sign in to your store</div></div>
+    </div>
+    <div class="field"><label>Email</label>
+      <input id="li-email" type="email" placeholder="you@example.com" required></div>
+    <div class="field"><label>Password</label>
+      <input id="li-pass" type="password" placeholder="••••••••" required></div>
+    <div class="field" id="li-namew" hidden><label>Full name</label>
+      <input id="li-name" placeholder="Your name"></div>
+    <div class="err" id="li-err"></div>
+    <button class="btn" id="li-submit" style="justify-content:center">Sign in</button>
+    <button class="btn outline" type="button" id="li-mode"
+      style="justify-content:center">New here? Create account</button>
+    <button class="btn outline" type="button" id="li-google"
+      style="justify-content:center">G · Continue with Google (demo)</button>
+    <div class="user-mail" style="text-align:center">New here? Create an account
+      first via the Streamlit app or CLI.</div>
+  </form>
+</div>
+
+<!-- ======================= SHELL ======================= -->
+<div class="shell" id="shell" hidden>
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="logo-box">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+      </div>
+      <span class="brand">ArthaMart</span>
+      <span class="ver" id="ver">live</span>
+    </div>
+    <nav class="side-nav">
+      <div class="nav-group"><div class="nav-label">Overview</div>
+        <button class="nav-item active" data-view="dashboard">▦ Dashboard</button>
+        <button class="nav-item" data-view="cards">★ Decision Cards
+          <span class="badge-count" id="n-cards">0</span></button></div>
+      <div class="nav-group"><div class="nav-label">Operations</div>
+        <button class="nav-item" data-view="orders">🛍 Orders
+          <span class="badge-count" id="n-orders">0</span></button>
+        <button class="nav-item" data-view="ocr">⬒ OCR Intake</button>
+        <button class="nav-item" data-view="inventory">▣ Inventory</button></div>
+      <div class="nav-group"><div class="nav-label">Intelligence</div>
+        <button class="nav-item" data-view="models">↗ Model Performance</button>
+        <button class="nav-item" data-view="simulation">⚗ Simulation</button>
+        <button class="nav-item" data-view="customers">👥 Customers</button>
+        <button class="nav-item" data-view="assistant">💬 AI Assistant</button></div>
+    </nav>
+    <div class="side-foot">
+      <button class="user-card" id="logout" title="Sign out">
+        <span class="avatar" id="u-av">–</span>
+        <span><div class="user-name" id="u-name">…</div>
+        <div class="user-mail" id="u-mail">…</div></span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <span class="crumb">ArthaMart / <b id="crumb-page">Dashboard</b></span>
+      <div class="search">⌕ Search…</div>
+      <button class="icon-btn" id="theme" title="Toggle theme">🌙</button>
+      <button class="icon-btn" onclick="loadAll()" title="Refresh">⟳</button>
+    </header>
+
+    <main class="content">
+      <div class="card" id="data-banner" hidden
+        style="border-color:hsl(var(--warning));padding:.8rem 1rem;font-size:13px">
+        ⚠️ <b>No model data yet.</b> In the project folder run
+        <code>python main.py all</code> once (or just restart
+        <code>python main.py dashboard</code> — it auto-builds on first run),
+        then refresh. OCR additionally needs Tesseract:
+        <code>winget install --id UB-Mannheim.TesseractOCR</code>, then
+        restart the server.
+      </div>
+      <!-- DASHBOARD -->
+      <section class="view active" id="view-dashboard">
+        <div class="page-head"><div><h1>Dashboard</h1>
+          <p>Live data from the connected ArthaMart database.</p></div></div>
+        <div class="grid cols-4" id="kpi-row"></div>
+        <div class="grid cols-2">
+          <div class="card"><div class="card-h"><div><h3>Cumulative net profit</h3>
+            <p>Naive vs system · 180 days</p></div>
+            <span class="badge green" id="sim-badge"></span></div>
+            <div class="card-b"><svg id="profit-chart" class="chart" viewBox="0 0 640 240"></svg></div>
+            <div class="legend"><span><i style="background:#94a3b8"></i>Naive</span>
+              <span><i style="background:#16a34a"></i>System</span></div></div>
+          <div class="card"><div class="card-h"><h3>Top decision cards</h3></div>
+            <div class="card-b" id="mini-cards"></div></div>
+        </div>
+        <div class="card"><div class="card-h"><h3>Recent orders</h3>
+          <button class="btn outline" data-goto="orders">View all</button></div>
+          <div class="card-b" style="padding-top:0"><table id="orders-mini"></table></div></div>
+      </section>
+
+      <!-- CARDS -->
+      <section class="view" id="view-cards">
+        <div class="page-head"><div><h1>Decision Cards</h1>
+          <p>Live from the decisions engine.</p></div></div>
+        <div class="grid" id="cards-list" style="grid-template-columns:1fr 1fr"></div>
+      </section>
+
+      <!-- ORDERS -->
+      <section class="view" id="view-orders">
+        <div class="page-head"><div><h1>Orders</h1>
+          <p>Recent orders + live dispatch queue. Fulfil sends stock &amp; prints invoice.</p></div></div>
+        <div class="card"><div class="card-h"><h3>Dispatch queue</h3></div>
+          <div class="card-b" style="padding-top:0"><table id="queue-table"></table></div></div>
+        <div class="card"><div class="card-h"><h3>Recent orders</h3>
+          <button class="btn outline" onclick="exportCSV('orders')">CSV</button></div>
+          <div class="card-b" style="padding-top:0"><table id="orders-table"></table></div></div>
+        <div class="grid cols-2">
+          <div class="card"><div class="card-h"><h3>Review queue</h3>
+            <span class="badge" id="pend-badge">0</span></div>
+            <div class="card-b" id="pend-list"></div></div>
+          <div class="card"><div class="card-h"><h3>Order lines</h3>
+            <select class="sel" id="ord-pick"></select></div>
+            <div class="card-b" style="padding-top:0"><table id="detail-table"></table></div></div>
+        </div>
+      </section>
+
+      <!-- OCR -->
+      <section class="view" id="view-ocr">
+        <div class="page-head"><div><h1>OCR Intake</h1>
+          <p>Upload a slip — real Tesseract + fuzzy matching pipeline.</p></div></div>
+        <div class="grid cols-2">
+          <div class="card"><div class="card-h"><h3>Upload slip</h3></div>
+            <div class="card-b"><div class="empty" id="drop"
+              style="border:1.5px dashed hsl(var(--border));border-radius:var(--radius);cursor:pointer">
+              ⬆ Click / drop a slip image<br>
+              <span class="muted">try ArthaMart/assets/sample_slips/*.png</span></div>
+              <input type="file" id="slip-file" accept="image/*" hidden></div></div>
+          <div class="card"><div class="card-h"><h3>Extracted lines</h3>
+            <span class="badge" id="ocr-badge">—</span></div>
+            <div class="card-b" style="padding-top:0"><table id="ocr-table"></table></div></div>
+        </div>
+      </section>
+
+      <!-- INVENTORY -->
+      <section class="view" id="view-inventory">
+        <div class="page-head"><div><h1>Inventory</h1>
+          <p>Live EOQ / ROP plan (top priority).</p></div>
+          <button class="btn outline" onclick="exportCSV('inventory')">CSV</button></div>
+        <div class="card"><div class="card-b" style="padding-top:0">
+          <table id="inv-table"></table></div></div>
+      </section>
+
+      <!-- MODELS -->
+      <section class="view" id="view-models">
+        <div class="page-head"><div><h1>Model Performance</h1>
+          <p>Live metrics from ml_* tables.</p></div></div>
+        <div class="grid cols-3" id="model-row"></div>
+        <div class="card"><div class="card-h"><h3>Forecast — pick a product</h3>
+          <select id="fc-pick" class="field" style="border:1px solid hsl(var(--input));
+            border-radius:var(--radius);background:hsl(var(--card));
+            color:hsl(var(--foreground));padding:.3rem .5rem"></select></div>
+          <div class="card-b"><svg id="fc-chart" class="chart" viewBox="0 0 640 220"></svg></div>
+          <div class="legend"><span><i style="background:#3b82f6"></i>Actual (60d)</span>
+            <span><i style="background:#f59e0b"></i>Forecast +7d</span></div></div>
+      </section>
+
+      <!-- SIMULATION -->
+      <section class="view" id="view-simulation">
+        <div class="page-head"><div><h1>Policy Simulation</h1>
+          <p>Live from simulation_results.</p></div></div>
+        <div class="grid cols-3" id="sim-row"></div>
+        <div class="card"><div class="card-h"><h3>Cumulative net profit</h3></div>
+          <div class="card-b"><svg id="sim-chart" class="chart" viewBox="0 0 640 240"></svg></div>
+          <div class="legend"><span><i style="background:#94a3b8"></i>Naive</span>
+            <span><i style="background:#16a34a"></i>System</span></div></div>
+        <div class="card"><div class="card-h"><h3>P&amp;L components</h3></div>
+          <div class="card-b"><svg id="pnl-chart" class="chart" viewBox="0 0 640 240"></svg></div></div>
+      </section>
+
+      <!-- CUSTOMERS -->
+      <section class="view" id="view-customers">
+        <div class="page-head"><div><h1>Customers</h1>
+          <p>Live segmentation (personalisation engine).</p></div></div>
+        <div class="grid cols-4" id="seg-row"></div>
+        <div class="card"><div class="card-h"><h3>Personalised recommendations</h3>
+          <select class="sel" id="rec-pick"></select></div>
+          <div class="card-b" style="padding-top:0"><table id="rec-table"></table></div></div>
+        <div class="card"><div class="card-h"><h3>Top customers</h3>
+          <button class="btn outline" onclick="exportCSV('customers')">CSV</button></div>
+          <div class="card-b" style="padding-top:0"><table id="cust-table"></table></div></div>
+      </section>
+
+      <!-- ASSISTANT -->
+      <section class="view" id="view-assistant">
+        <div class="page-head"><div><h1>AI Assistant</h1>
+          <p>Answers computed from your live store data.</p></div></div>
+        <div class="card"><div class="card-b">
+          <div class="chat-log" id="chat-log"></div>
+          <div class="chips" id="chips"></div>
+          <div class="chat-in"><input id="chat-q"
+            placeholder="Ask about reorders, markdowns, bundles, prices, stock…">
+            <button class="btn" id="chat-send">Send</button></div>
+        </div></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+/* sandbox-safe storage (preview iframes may block localStorage) */
+const store=(()=>{try{localStorage.setItem("__t","1");
+  localStorage.removeItem("__t");return localStorage;}
+ catch(e){const m={};return{getItem:k=>(k in m?m[k]:null),
+   setItem:(k,v)=>{m[k]=v;},removeItem:k=>{delete m[k];}};}})();
+const TOKEN=()=>store.getItem("am_token")||"";
+async function api(p,o={}){
+  const r=await fetch(p,{...o,headers:{...(o.headers||{}),
+    "Authorization":"Bearer "+TOKEN()}});
+  if(r.status===401){showLogin();throw new Error("unauthorized");}
+  return r;
+}
+const J=p=>api(p).then(r=>r.json());
+const inr=v=>"₹"+Number(v||0).toLocaleString("en-IN",
+  {maximumFractionDigits:0});
+
+/* ---------------- auth ---------------- */
+function showLogin(){$("#login").style.display="grid";$("#shell").hidden=true;}
+function showShell(u){
+  $("#login").style.display="none";$("#shell").hidden=false;
+  $("#u-name").textContent=u.name;$("#u-mail").textContent=u.email;
+  $("#u-av").textContent=u.name.split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
+  loadAll();
+}
+let signupMode=false;
+const EMAIL_OK=e=>/^[^\s@]+@(?!.*\.\.)[^\s@]+\.[^\s@]{2,}$/.test(e.trim());
+function liErr(t){$("#li-err").textContent=t||"";}
+["li-email","li-pass","li-name"].forEach(id=>
+  document.getElementById(id).addEventListener("input",()=>liErr()));
+$("#li-mode").addEventListener("click",()=>{
+  signupMode=!signupMode;
+  $("#li-namew").hidden=!signupMode;
+  $("#li-mode").textContent=signupMode?"Have an account? Sign in"
+                                       :"New here? Create account";
+  $("#li-submit").textContent=signupMode?"Create account":"Sign in";
+  liErr();
+});
+$("#login-form").addEventListener("submit",async e=>{
+  e.preventDefault();liErr();
+  const email=$("#li-email").value.trim(),
+        pass=$("#li-pass").value,
+        name=$("#li-name").value.trim();
+  if(!EMAIL_OK(email))return liErr("Enter a valid email address.");
+  if(pass.length<6)return liErr("Password must be at least 6 characters.");
+  if(pass.length>128)return liErr("Password too long (max 128).");
+  if(signupMode&&!name)return liErr("Enter your name.");
+  const btn=$("#li-submit");btn.disabled=true;
+  const url=signupMode?"/api/auth/signup":"/api/auth/login";
+  try{
+    const r=await fetch(url,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email,password:pass,name})});
+    const d=await r.json();
+    if(!r.ok){liErr(d.error||(r.status===429?"Too many attempts.":
+        "Login failed."));return;}
+    store.setItem("am_token",d.token);showShell(d.user);
+  }catch(err){liErr("Cannot reach server — is it running?");}
+  finally{btn.disabled=false;}
+});
+$("#li-google").addEventListener("click",async()=>{
+  const r=await fetch("/api/auth/google-demo",{method:"POST"});
+  const d=await r.json();
+  store.setItem("am_token",d.token);showShell(d.user);
+});
+$("#logout").addEventListener("click",async()=>{
+  await api("/api/auth/logout",{method:"POST"});
+  store.removeItem("am_token");showLogin();
+});
+
+/* ---------------- tables/charts ---------------- */
+function table(el,head,rows){
+  el.innerHTML="<thead><tr>"+head.map(h=>`<th>${h}</th>`).join("")+
+   "</tr></thead><tbody>"+rows.map(r=>"<tr>"+r.map(c=>
+     Array.isArray(c)?`<td><span class="badge ${c[1]}">${c[0]}</span></td>`
+     :`<td>${c}</td>`).join("")+"</tr>").join("")+"</tbody>";
+}
+const stBadge=s=>s==="CRITICAL"?["CRITICAL","red"]:
+  s==="REORDER"?["REORDER","amber"]:
+  s==="PARTIAL"?["PARTIAL","amber"]:
+  (s==="DISPATCH"||s==="OK"||s==="FULFILLED")?[s,"green"]:[s,""];
+function lineChart(sel,series){
+  const el=$(sel);if(!el)return;
+  const W=640,H=el.viewBox.baseVal.height,P=28;
+  const all=series.flatMap(s=>s.pts);
+  if(!all.length){el.innerHTML="";return;}
+  const maxY=Math.max(...all.map(p=>p[1]))*1.08||1;
+  const maxX=Math.max(...all.map(p=>p[0]))||1;
+  const X=v=>P+(v/maxX)*(W-2*P),Y=v=>H-P-(v/maxY)*(H-2*P);
+  let g="";for(let i=0;i<=4;i++){const y=P+i*(H-2*P)/4;
+    g+=`<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="hsl(var(--border))"/>`;}
+  el.innerHTML=g+series.map(s=>{
+    const d=s.pts.map((p,i)=>(i?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join(" ");
+    return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2"
+      ${s.dash?'stroke-dasharray="5 5"':""}/>`;}).join("");
+}
+
+/* ---------------- loaders ---------------- */
+async function loadAll(){
+  const [kp,cards,ord,inv,cust,mod,sim,fc]=await Promise.all([
+    J("/api/kpis"),J("/api/cards"),J("/api/orders"),J("/api/inventory"),
+    J("/api/customers"),J("/api/models"),J("/api/simulation"),
+    J("/api/forecast")]);
+  window.D={orders:ord,inv,cust};
+  const hh=await J("/api/health");
+  if($("#data-banner"))$("#data-banner").hidden=!!hh.ready;
+
+  $("#ver").textContent="v live";
+  $("#n-cards").textContent=cards.length;
+  $("#n-orders").textContent=ord.queue.length;
+
+  const adv=kp.system-kp.naive, pct=kp.naive?adv/Math.abs(kp.naive)*100:0;
+  $("#kpi-row").innerHTML=[
+    ["Revenue (all orders)",inr(kp.revenue),""],
+    ["System net profit",inr(kp.system),
+      `<span class="up">▲ ${pct.toFixed(1)}%</span> vs naive`],
+    ["Open orders",kp.open_orders,"queue: "+ord.queue.length],
+    ["Stock alerts",kp.stock_alerts,kp.pos+" purchase orders suggested"],
+  ].map(s=>`<div class="card stat"><div class="lbl">${s[0]}</div>
+    <div class="val">${s[1]}</div><div class="delta">${s[2]}</div></div>`).join("");
+  $("#sim-badge").textContent="+"+pct.toFixed(1)+"%";
+
+  $("#mini-cards").innerHTML=cards.slice(0,4).map(c=>{
+    const col=c.type.includes("Markdown")?"#ef4444":
+      c.type.includes("Reorder")?"#3b82f6":
+      c.type.includes("Hold")?"#8b5cf6":"#22c55e";
+    return `<div class="card dcard" style="margin-bottom:.6rem">
+      <div class="top"><span class="dot" style="background:${col}"></span>
+      <span class="t">${c.type} — ${c.product}</span>
+      <span class="amt">${inr(c.impact)}</span></div>
+      <div class="why">${c.action}</div></div>`;}).join("");
+
+  const orow=o=>[ "#"+o.order_id!==undefined?"#"+o.order_id:o.order_id,
+    o.customer, inr(o.total_value), (o.fulfilment_pct??"")+"%",
+    stBadge(o.status)];
+  table($("#orders-mini"),["Order","Customer","Value","Fulfil","Status"],
+    ord.recent.slice(0,6).map(orow));
+  table($("#orders-table"),["Order","Customer","Value","Fulfil","Status",""],
+    ord.recent.map(o=>[...orow(o),
+      `<button class="btn outline" style="padding:.2rem .6rem"
+        onclick="fulfil(${o.order_id})">Fulfil+Invoice</button>`]));
+  table($("#queue-table"),["Rank","Order","Fulfilment","Value","Flag"],
+    ord.queue.map(e=>[e.rank,"#"+e.order,e.fulfilment+"%",inr(e.value),
+      stBadge(e.flag==="HOLD"?"HOLD":e.flag)]));
+
+  table($("#inv-table"),["Product","Stock","ROP","EOQ","Status"],
+    inv.map(r=>[r.product,r.stock,r.rop,r.eoq,stBadge(r.status)]));
+
+  $("#model-row").innerHTML=[
+    ["RF forecaster","MAPE "+(mod.mape??0).toFixed(1)+"%",
+      "RMSE "+(mod.rmse??0).toFixed(2)+" · beats both baselines"],
+    ["K-Means (k=3)","ARI —","tiers "+JSON.stringify(mod.tiers||{})
+      .replace(/[{}"]/g,"")],
+    ["FP-Growth rules",mod.rules??0,"max lift "+(mod.max_lift??0).toFixed(2)
+      +" · "+inr(mod.weekly_impact)+"/wk"],
+  ].map(s=>`<div class="card stat"><div class="lbl">${s[0]}</div>
+    <div class="val">${s[1]}</div><div class="delta">${s[2]}</div></div>`).join("");
+
+  $("#seg-row").innerHTML=["VIP","REGULAR","NEW","AT_RISK"].map(t=>
+    `<div class="card stat"><div class="lbl">${t}</div>
+     <div class="val">${(cust.counts||{})[t]||0}</div></div>`).join("");
+  table($("#cust-table"),["Customer","Segment","Spend","Orders"],
+    cust.top.map(r=>[r.name,stBadge(r.segment==="VIP"?"OK":
+      r.segment==="AT_RISK"?"CRITICAL":r.segment),inr(r.spend),r.visits]));
+
+  /* charts */
+  lineChart("#profit-chart",[
+    {pts:(sim.series.naive||[]),color:"#94a3b8",dash:true},
+    {pts:(sim.series.system||[]),color:"#16a34a"}]);
+  lineChart("#sim-chart",[
+    {pts:(sim.series.naive||[]),color:"#94a3b8",dash:true},
+    {pts:(sim.series.system||[]),color:"#16a34a"}]);
+  const pn=sim.pnl||[];const g=k=>pn.find(p=>p.policy===k)||{};
+  const N=g("naive"),S=g("system");
+  (function bars(){
+    const data=[["Revenue",N.rev,S.rev],["COGS",N.cogs,S.cogs],
+      ["Holding",N.hold,S.hold],["Markdown",N.md,S.md],
+      ["Stockout",N.so,S.so]];
+    const el=$("#pnl-chart"),W=640,H=240,P=30;
+    const maxY=Math.max(...data.map(d=>Math.max(d[1]||0,d[2]||0)))*1.1||1;
+    const bw=(W-2*P)/data.length;
+    el.innerHTML=data.map((d,i)=>{
+      const h1=(d[1]||0)/maxY*(H-2*P),h2=(d[2]||0)/maxY*(H-2*P),x=P+i*bw;
+      return `<rect x="${x+bw*.18}" y="${H-P-h1}" width="${bw*.26}" height="${h1}" rx="3" fill="#94a3b8"/>
+        <rect x="${x+bw*.52}" y="${H-P-h2}" width="${bw*.26}" height="${h2}" rx="3" fill="#16a34a"/>
+        <text x="${x+bw/2}" y="${H-P+16}" font-size="11" text-anchor="middle"
+          fill="hsl(var(--muted-foreground))">${d[0]}</text>`;}).join("");
+  })();
+  $("#sim-row").innerHTML=[
+    ["Naive profit",inr(N.net_profit_sum??N.net_profit??0)],
+    ["System profit",inr(S.net_profit_sum??S.net_profit??0)],
+    ["Advantage",inr((S.net_profit||0)-(N.net_profit||0))],
+  ].map(s=>`<div class="card stat"><div class="lbl">${s[0]}</div>
+    <div class="val">${s[1]}</div></div>`).join("");
+
+  /* forecast picker */
+  const sel=$("#fc-pick");
+  sel.innerHTML=fc.map(p=>`<option value="${p.product_id}">${p.name}
+    (≈${Math.round(p.next7)}/wk)</option>`).join("");
+  sel.onchange=()=>loadFc(+sel.value);
+  if(fc.length)loadFc(+sel.value);
+
+  /* personalisation recs picker */
+  $("#rec-pick").innerHTML=cust.top.map(r=>
+    `<option value="${r.customer_id}">${r.name} · ${r.segment}</option>`).join("");
+  $("#rec-pick").onchange=e=>loadRecs(+e.target.value);
+  if(cust.top.length)loadRecs(cust.top[0].customer_id);
+
+  /* order-lines picker + review queue */
+  $("#ord-pick").innerHTML=ord.recent.map(r=>
+    `<option value="${r.order_id}">#${r.order_id} · ${r.customer}</option>`).join("");
+  $("#ord-pick").onchange=e=>loadDetail(+e.target.value);
+  if(ord.recent.length)loadDetail(ord.recent[0].order_id);
+  loadPending();
+}
+async function loadFc(pid){
+  const d=await J("/api/forecast/"+pid);
+  const hist=d.history.map((r,i)=>[i,r.qty_sold]);
+  const base=hist.length;
+  const fcst=d.forecast.map((r,i)=>[base-1+i,r.predicted_qty]);
+  lineChart("#fc-chart",[{pts:hist,color:"#3b82f6"},
+    {pts:fcst,color:"#f59e0b",dash:true}]);
+}
+async function fulfil(id){
+  const r=await api("/api/fulfil/"+id,{method:"POST"});
+  const d=await r.json();
+  if(!r.ok){alert(d.error||"fulfil failed");return;}
+  alert("Fulfilled "+d.fulfilment.lines_shipped+"/"+d.fulfilment.lines_orderable
+    +" lines"+(d.invoice?" — invoice ready":""));
+  loadAll();
+}
+async function invoice(id){
+  const r=await api("/api/invoice/"+id);
+  const b=await r.blob();
+  const u=URL.createObjectURL(b);
+  const a=document.createElement("a");a.href=u;
+  a.download="invoice_"+id+".pdf";a.click();
+}
+
+/* ---------------- OCR upload ---------------- */
+$("#drop").addEventListener("click",()=>$("#slip-file").click());
+$("#slip-file").addEventListener("change",e=>{
+  if(e.target.files[0])sendSlip(e.target.files[0]);});
+$("#drop").addEventListener("dragover",e=>e.preventDefault());
+$("#drop").addEventListener("drop",e=>{e.preventDefault();
+  if(e.dataTransfer.files[0])sendSlip(e.dataTransfer.files[0]);});
+async function sendSlip(f){
+  $("#ocr-badge").textContent="processing…";
+  const r=await api("/api/ocr",{method:"POST",
+    headers:{"Content-Type":f.type||"image/png"},
+    body:await f.arrayBuffer()});
+  const d=await r.json();
+  if(!r.ok){$("#ocr-badge").textContent="error";alert(d.error);return;}
+  const m=d.filter(x=>x.status==="MATCHED").length;
+  $("#ocr-badge").textContent=m+"/"+d.length+" matched";
+  table($("#ocr-table"),["OCR text","Qty","Match","Score","Status"],
+    d.map(x=>[x.raw,x.qty,x.match??"—",x.score,stBadge(x.status)]));
+}
+
+/* ---------------- parity features ---------------- */
+async function loadRecs(cid){
+  const r=await J("/api/recommend/"+cid);
+  table($("#rec-table"),["Product","Reason","Score"],
+    r.map(x=>[x.name,x.reason,x.score]));
+}
+async function loadDetail(oid){
+  const d=await J("/api/order/"+oid);
+  table($("#detail-table"),["Line","Product","Qty","Avail","Status","Total"],
+    d.map(x=>["#"+x.line_id,(x.product||x.raw_text||"—"),x.ordered_qty,
+      x.available_qty??"-",stBadge(x.status),x.line_total]));
+}
+async function loadPending(){
+  const p=await J("/api/pending");
+  $("#pend-badge").textContent=p.length;
+  $("#pend-list").innerHTML=p.length?p.map(it=>{
+    const opts=(it.candidates||[]).map(c=>
+      `<option value="${c[0]}">#${c[0]} ${c[1]} (${c[2]})</option>`).join("");
+    return `<div class="card dcard" style="margin-bottom:.6rem">
+      <div class="top"><span class="t">line ${it.line_id} · ${it.raw_text}
+        × ${it.ordered_qty}</span><span class="badge amber">${it.status}</span></div>
+      <div class="row"><select class="sel" id="ps-${it.line_id}">${opts}</select>
+      <button class="btn" onclick="resolveLine(${it.line_id},
+        +document.getElementById('ps-${it.line_id}').value)">Resolve</button></div>
+      </div>`;
+  }).join(""):`<div class="empty">✅ Nothing needs a human.</div>`;
+}
+async function resolveLine(lid,pid){
+  await api("/api/resolve",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({line_id:lid,product_id:pid})});
+  loadPending();loadAll();
+}
+function exportCSV(kind){
+  const rows=kind==="orders"?D.orders.recent:
+    kind==="inventory"?D.inv:D.cust.top;
+  if(!rows||!rows.length)return;
+  const cols=Object.keys(rows[0]);
+  const csv=[cols.join(",")].concat(rows.map(r=>
+    cols.map(c=>JSON.stringify(r[c]?? "")).join(","))).join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download=kind+".csv";a.click();
+}
+/* assistant chat */
+const CHIPS=["Which products need reordering?","What should I markdown?",
+  "Best bundle deals","Stock of Potato","Price of Tata Tea",
+  "Who are my VIP customers?","How much profit did the system make?"];
+function pushMsg(role,text){
+  const el=document.createElement("div");
+  el.className="msg "+(role==="user"?"user":"bot");
+  el.textContent=text;$("#chat-log").appendChild(el);
+  $("#chat-log").scrollTop=1e9;
+}
+async function ask(qq){
+  if(!qq)return;
+  pushMsg("user",qq);
+  const r=await api("/api/assistant",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({q:qq})});
+  const d=await r.json();
+  pushMsg("bot",d.answer||d.error||"…");
+}
+(function initChat(){
+  $("#chips").innerHTML=CHIPS.map(c=>`<button class="chip">${c}</button>`).join("");
+  $("#chips").querySelectorAll(".chip").forEach((b,i)=>b.onclick=()=>ask(CHIPS[i]));
+  $("#chat-send").onclick=()=>{ask($("#chat-q").value);$("#chat-q").value="";};
+  $("#chat-q").addEventListener("keydown",e=>{if(e.key==="Enter")$("#chat-send").click();});
+  pushMsg("bot","Hi! I answer from your live store data — tap a chip or type a question.");
+})();
+
+/* ---------------- nav/theme ---------------- */
+const names={dashboard:"Dashboard",cards:"Decision Cards",orders:"Orders",
+  ocr:"OCR Intake",inventory:"Inventory",models:"Model Performance",
+  simulation:"Simulation",customers:"Customers",assistant:"AI Assistant"};
+function go(v){
+  document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+  $("#view-"+v).classList.add("active");
+  document.querySelectorAll(".nav-item").forEach(b=>
+    b.classList.toggle("active",b.textContent.includes(names[v])&&b.dataset.view===v));
+  document.querySelectorAll(".nav-item").forEach(b=>{
+    if(b.dataset.view===v)b.classList.add("active");
+    else b.classList.remove("active");});
+  $("#crumb-page").textContent=names[v];
+}
+document.querySelectorAll(".nav-item").forEach(b=>
+  b.addEventListener("click",()=>go(b.dataset.view)));
+document.querySelectorAll("[data-goto]").forEach(b=>
+  b.addEventListener("click",()=>go(b.dataset.goto)));
+$("#theme").addEventListener("click",()=>{
+  const d=document.documentElement.classList.toggle("dark");
+  $("#theme").textContent=d?"☀️":"🌙";
+});
+
+/* ---------------- boot ---------------- */
+(async()=>{
+  const h=await fetch("/api/health").then(r=>r.json()).catch(()=>null);
+  if(h)$("#ver").textContent="v"+(h.version||"")+" · live";
+  if(TOKEN()){
+    const r=await api("/api/kpis");
+    if(r.ok){ /* token valid */
+      showShell({name:"Returning user",email:""});
+      const me=await J("/api/health");
+      return;
+    }
+  }
+  showLogin();
+})();
+</script>
+</body>
+</html>
