@@ -64,6 +64,44 @@ def test_auth_and_protected(port):
         assert len(body) > 10
 
 
+@pytest.mark.skipif(not config.DB_PATH.exists(), reason="run setup first")
+def test_product_intelligence_endpoints(port):
+    st, body = call(port, "/api/auth/google-demo", "POST")
+    assert st == 200
+    tok = json.loads(body)["token"]
+
+    st, body = call(port, "/api/product-segments", token=tok)
+    assert st == 200, body
+    segments = json.loads(body)
+    assert segments
+    assert {"product_id", "name", "tier", "avg_daily_sales", "velocity",
+            "revenue", "days_with_sales", "stock_on_hand"} <= set(segments[0])
+
+    st, body = call(port, "/api/basket-products", token=tok)
+    assert st == 200, body
+    products = json.loads(body)
+    assert products and {"product_id", "name", "rule_count"} <= set(products[0])
+
+    pid = products[0]["product_id"]
+    st, body = call(port, f"/api/basket-rules/{pid}", token=tok)
+    assert st == 200, body
+    result = json.loads(body)
+    assert result["product"] == products[0]["name"]
+    assert isinstance(result["rules"], list)
+
+    st, body = call(port, f"/api/forecast/{pid}", token=tok)
+    assert st == 200, body
+    forecast = json.loads(body)
+    assert {"history", "forecast", "metrics"} <= set(forecast)
+
+
+def test_decision_cards_page_has_a_renderer():
+    html = (config.ROOT / "src" / "webui" / "index.html").read_text(encoding="utf-8")
+    assert 'id="cards-list"' in html
+    assert "function renderDecisionCards(cards)" in html
+    assert "renderDecisionCards(cards);" in html
+
+
 def test_google_demo_login(port):
     st, body = call(port, "/api/auth/google-demo", "POST")
     assert st == 200
@@ -85,7 +123,11 @@ def test_parity_endpoints(port):
     st, body = call(port, "/api/pending", token=tok)
     assert st == 200 and isinstance(json.loads(body), list)
 
-    st, body = call(port, "/api/order/3004", token=tok)
+    st, body = call(port, "/api/orders", token=tok)
+    assert st == 200
+    recent = json.loads(body)["recent"]
+    assert recent
+    st, body = call(port, f"/api/order/{recent[0]['order_id']}", token=tok)
     assert st == 200 and len(json.loads(body)) >= 1
 
 

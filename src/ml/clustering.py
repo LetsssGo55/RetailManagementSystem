@@ -142,7 +142,7 @@ def train_clusters(conn: sqlite3.Connection, save: bool = True) -> tuple:
             "(product_id, cluster, tier, velocity, silhouette, assigned_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             [(int(r.product_id), int(r.cluster), r.tier,
-              round(float(r.avg_daily_sales), 3), round(float(r.silhouette), 4),
+              round(float(r.velocity), 6), round(float(r.silhouette), 4),
               now) for r in df.itertuples()])
         conn.commit()
 

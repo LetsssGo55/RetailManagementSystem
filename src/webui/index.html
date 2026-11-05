@@ -374,13 +374,28 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
         <div class="page-head"><div><h1>Model Performance</h1>
           <p>Live metrics from ml_* tables.</p></div></div>
         <div class="grid cols-3" id="model-row"></div>
-        <div class="card"><div class="card-h"><h3>Forecast — pick a product</h3>
-          <select id="fc-pick" class="field" style="border:1px solid hsl(var(--input));
-            border-radius:var(--radius);background:hsl(var(--card));
-            color:hsl(var(--foreground));padding:.3rem .5rem"></select></div>
-          <div class="card-b"><svg id="fc-chart" class="chart" viewBox="0 0 640 220"></svg></div>
+        <div class="card"><div class="card-h"><h3>Demand forecast — selected product</h3>
+          <select id="fc-pick" class="sel" aria-label="Select forecast product"></select></div>
+          <div class="card-b"><div id="fc-summary" class="muted" style="margin-bottom:.7rem">Select a product to inspect its sales history and forecast.</div>
+            <svg id="fc-chart" class="chart" viewBox="0 0 640 220"></svg></div>
           <div class="legend"><span><i style="background:#3b82f6"></i>Actual (60d)</span>
             <span><i style="background:#f59e0b"></i>Forecast +7d</span></div></div>
+
+        <div class="card"><div class="card-h"><h3>Product segmentation — inspect a product</h3>
+          <select id="seg-pick" class="sel" aria-label="Select segmented product"></select></div>
+          <div class="card-b">
+            <div id="seg-product-summary" class="grid cols-4"></div>
+            <p id="seg-product-note" class="muted" style="margin:.7rem 0"></p>
+            <div style="overflow-x:auto"><table id="seg-product-table"></table></div>
+          </div></div>
+
+        <div class="card"><div class="card-h"><h3>Market basket — products associated with a selected product</h3>
+          <select id="basket-pick" class="sel" aria-label="Select market basket product"></select></div>
+          <div class="card-b">
+            <div id="basket-product-summary" class="grid cols-4"></div>
+            <p id="basket-product-note" class="muted" style="margin:.7rem 0"></p>
+            <div style="overflow-x:auto"><table id="basket-product-table"></table></div>
+          </div></div>
       </section>
 
       <!-- SIMULATION -->
@@ -442,6 +457,8 @@ async function api(p,o={}){
 const J=p=>api(p).then(r=>r.json());
 const inr=v=>"₹"+Number(v||0).toLocaleString("en-IN",
   {maximumFractionDigits:0});
+const esc=v=>String(v??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+const fmt=v=>(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))?"—":Number(v).toLocaleString("en-IN",{maximumFractionDigits:2});
 
 /* ---------------- auth ---------------- */
 function showLogin(){$("#login").style.display="grid";$("#shell").hidden=true;}
@@ -523,19 +540,99 @@ function lineChart(sel,series){
       ${s.dash?'stroke-dasharray="5 5"':""}/>`;}).join("");
 }
 
+/* ---------------- decision cards ---------------- */
+function decisionCardMarkup(c){
+  const type=String(c.type||"Decision");
+  const lower=type.toLowerCase();
+  const color=lower.includes("markdown")?"#ef4444":
+    lower.includes("reorder")?"#3b82f6":
+    lower.includes("hold")?"#8b5cf6":"#22c55e";
+  return `<article class="card dcard">
+    <div class="top"><span class="dot" style="background:${color}"></span>
+      <span class="t">${esc(c.icon||"•")} ${esc(type)} — ${esc(c.product||"Product")}</span>
+      <span class="amt">${inr(c.impact)}</span></div>
+    <div class="row"><span class="badge">Recommended action</span></div>
+    <div>${esc(c.action||"No action detail supplied.")}</div>
+    <div class="why"><b>Why:</b> ${esc(c.reason||"No reasoning supplied.")}</div>
+  </article>`;
+}
+function renderDecisionCards(cards){
+  const el=$("#cards-list");
+  if(!el)return;
+  el.innerHTML=cards.length?cards.map(decisionCardMarkup).join(""):
+    `<div class="empty" style="grid-column:1/-1">No decision cards are currently generated. Refresh after training the models and running inventory optimisation.</div>`;
+}
+
+/* ---------------- product-level intelligence ---------------- */
+function renderSegments(rows){
+  const sel=$("#seg-pick");
+  if(!sel)return;
+  const previous=sel.value;
+  sel.innerHTML=rows.map(p=>`<option value="${p.product_id}">${esc(p.name)} · ${esc(p.tier||"UNASSIGNED")}</option>`).join("");
+  if(rows.some(p=>String(p.product_id)===previous))sel.value=previous;
+  const show=()=>{
+    const p=rows.find(x=>String(x.product_id)===sel.value);
+    if(!p){$("#seg-product-summary").innerHTML="";$("#seg-product-note").textContent="No product segmentation records are available. Run model training to generate assignments.";return;}
+    const tier=p.tier||"UNASSIGNED";
+    const tierColor=tier==="FAST"?"green":tier==="SLOW"?"amber":"";
+    $("#seg-product-summary").innerHTML=[
+      ["Product segment",`<span class="badge ${tierColor}">${esc(tier)}</span>`],
+      ["Average daily sales",fmt(p.avg_daily_sales)+" units"],
+      ["Sales velocity (CV)",fmt(p.velocity)],
+      ["Sales revenue",inr(p.revenue)]
+    ].map(x=>`<div class="card stat"><div class="lbl">${x[0]}</div><div class="val" style="font-size:18px">${x[1]}</div></div>`).join("");
+    $("#seg-product-note").textContent=`${p.name} · ${p.category||"Uncategorised"} · ${p.days_with_sales??0} days with sales · Stock ${p.stock_on_hand??"—"} · Cluster ${p.cluster??"—"} · Individual silhouette ${fmt(p.silhouette)}. Velocity is the coefficient of variation (daily-sales standard deviation ÷ mean).`;
+  };
+  sel.onchange=show;
+  show();
+  table($("#seg-product-table"),["Product","Category","Tier","Avg units/day","Velocity CV","Revenue","Days with sales","Stock"],
+    rows.map(p=>[esc(p.name),esc(p.category||"—"),stBadge(p.tier||"UNASSIGNED"),fmt(p.avg_daily_sales),fmt(p.velocity),inr(p.revenue),p.days_with_sales??0,p.stock_on_hand??"—"]));
+}
+async function loadBasketProduct(pid){
+  if(!pid)return;
+  const d=await J("/api/basket-rules/"+pid);
+  const product=d.product||"Selected product";
+  const rows=d.rules||[];
+  $("#basket-product-summary").innerHTML=[
+    ["Associations",rows.length],
+    ["Strongest lift",rows.length?fmt(Math.max(...rows.map(r=>Number(r.lift)||0))):"—"],
+    ["Highest confidence",rows.length?(Math.max(...rows.map(r=>Number(r.confidence)||0))*100).toFixed(1)+"%":"—"],
+    ["Weekly impact",inr(rows.reduce((a,r)=>a+(Number(r.weekly_impact)||0),0))]
+  ].map(x=>`<div class="card stat"><div class="lbl">${x[0]}</div><div class="val" style="font-size:18px">${x[1]}</div></div>`).join("");
+  $("#basket-product-note").textContent=rows.length
+    ? `Persisted FP-Growth associations involving ${product}. Direction matters: confidence is calculated for the antecedent → consequent rule shown in each row.`
+    : `No persisted association rules involve ${product}. This is a valid result; it does not mean the product was not analysed.`;
+  if(!rows.length){$("#basket-product-table").innerHTML="";return;}
+  table($("#basket-product-table"),["Associated product","Rule direction","Action","Support","Confidence","Lift","Weekly impact"],
+    rows.map(r=>[esc(r.associated_product),esc(r.direction),stBadge(r.action),
+      (Number(r.support)*100).toFixed(2)+"%",(Number(r.confidence)*100).toFixed(1)+"%",
+      fmt(r.lift),inr(r.weekly_impact)]));
+}
+function renderBasketProducts(products){
+  const sel=$("#basket-pick");
+  if(!sel)return;
+  const previous=sel.value;
+  sel.innerHTML=products.map(p=>`<option value="${p.product_id}">${esc(p.name)} · ${p.rule_count} rules</option>`).join("");
+  if(products.some(p=>String(p.product_id)===previous))sel.value=previous;
+  sel.onchange=()=>loadBasketProduct(+sel.value);
+  if(products.length)loadBasketProduct(+sel.value);
+  else{$("#basket-product-summary").innerHTML="";$("#basket-product-note").textContent="No products are available in the catalogue.";}
+}
+
 /* ---------------- loaders ---------------- */
 async function loadAll(){
-  const [kp,cards,ord,inv,cust,mod,sim,fc]=await Promise.all([
+  const [kp,cards,ord,inv,cust,mod,sim,fc,segments,basketProducts]=await Promise.all([
     J("/api/kpis"),J("/api/cards"),J("/api/orders"),J("/api/inventory"),
     J("/api/customers"),J("/api/models"),J("/api/simulation"),
-    J("/api/forecast")]);
-  window.D={orders:ord,inv,cust};
+    J("/api/forecast"),J("/api/product-segments"),J("/api/basket-products")]);
+  window.D={orders:ord,inv,cust,segments,basketProducts};
   const hh=await J("/api/health");
   if($("#data-banner"))$("#data-banner").hidden=!!hh.ready;
 
   $("#ver").textContent="v live";
   $("#n-cards").textContent=cards.length;
   $("#n-orders").textContent=ord.queue.length;
+  renderDecisionCards(cards);
 
   const adv=kp.system-kp.naive, pct=kp.naive?adv/Math.abs(kp.naive)*100:0;
   $("#kpi-row").innerHTML=[
@@ -627,6 +724,8 @@ async function loadAll(){
     (≈${Math.round(p.next7)}/wk)</option>`).join("");
   sel.onchange=()=>loadFc(+sel.value);
   if(fc.length)loadFc(+sel.value);
+  renderSegments(segments||[]);
+  renderBasketProducts(basketProducts||[]);
 
   /* personalisation recs picker */
   $("#rec-pick").innerHTML=cust.top.map(r=>
@@ -642,12 +741,21 @@ async function loadAll(){
   loadPending();
 }
 async function loadFc(pid){
+  if(!pid)return;
   const d=await J("/api/forecast/"+pid);
-  const hist=d.history.map((r,i)=>[i,r.qty_sold]);
+  const histRows=d.history||[],forecastRows=d.forecast||[];
+  const hist=histRows.map((r,i)=>[i,r.qty_sold]);
   const base=hist.length;
-  const fcst=d.forecast.map((r,i)=>[base-1+i,r.predicted_qty]);
+  const fcst=forecastRows.map((r,i)=>[base-1+i,r.predicted_qty]);
   lineChart("#fc-chart",[{pts:hist,color:"#3b82f6"},
     {pts:fcst,color:"#f59e0b",dash:true}]);
+  const histUnits=histRows.reduce((a,r)=>a+(Number(r.qty_sold)||0),0);
+  const histAvg=histRows.length?histUnits/histRows.length:0;
+  const forecastUnits=forecastRows.reduce((a,r)=>a+(Number(r.predicted_qty)||0),0);
+  const delta=histAvg>0?((forecastUnits/7-histAvg)/histAvg)*100:null;
+  const name=$("#fc-pick").selectedOptions[0]?.textContent?.trim()||("Product #"+pid);
+  const metrics=d.metrics||{};
+  $("#fc-summary").innerHTML=`<b>${esc(name)}</b> · Historical sales: ${fmt(histUnits)} units over ${histRows.length} days (${fmt(histAvg)} per day) · Next 7-day forecast: <b>${fmt(forecastUnits)} units</b> (${fmt(forecastUnits/7)} per day) · Forecast vs historical daily average: ${delta===null?"not available":(delta>=0?"+":"")+delta.toFixed(1)+"%"} · Product model metrics: RMSE ${fmt(metrics.rmse)}, MAE ${fmt(metrics.mae)}, MAPE ${metrics.mape==null?"—":fmt(metrics.mape)+"%"}.`;
 }
 async function fulfil(id){
   const r=await api("/api/fulfil/"+id,{method:"POST"});

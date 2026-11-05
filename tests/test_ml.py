@@ -200,6 +200,17 @@ def test_seeded_pair_discovered(conn):
 # persisted outputs (written by `python main.py train`)
 # ---------------------------------------------------------------------------
 
+def test_cluster_assignment_velocity_persists_coefficient_of_variation(conn):
+    """The persisted velocity field must match the feature used by K-Means."""
+    _, frame = clustering.train_clusters(conn, save=True)
+    sample = frame.iloc[0]
+    row = conn.execute(
+        "SELECT velocity FROM ml_cluster_assignment WHERE product_id = ?",
+        (int(sample.product_id),)).fetchone()
+    assert row is not None
+    assert row["velocity"] == pytest.approx(float(sample.velocity), abs=1e-6)
+
+
 def test_ml_outputs_persisted(conn):
     n_fc = conn.execute("SELECT COUNT(*) FROM ml_forecast_output").fetchone()[0]
     n_cl = conn.execute("SELECT COUNT(*) FROM ml_cluster_assignment").fetchone()[0]

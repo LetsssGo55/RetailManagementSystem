@@ -153,6 +153,102 @@ def api_models():
     return q(f)
 
 
+def api_product_segments():
+    """Product-level K-Means assignments joined to current sales features."""
+    from src.ml.clustering import product_features
+
+    def f(c):
+        feature_df = product_features(c)
+        features = {
+            int(row.product_id): {
+                "avg_daily_sales": float(row.avg_daily_sales),
+                "velocity": float(row.velocity),
+                "revenue": float(row.revenue),
+                "days_with_sales": int(row.days_with_sales),
+            }
+            for row in feature_df.itertuples()
+        } if not feature_df.empty else {}
+        assignments = {
+            int(row["product_id"]): dict(row)
+            for row in c.execute(
+                "SELECT product_id, cluster, tier, silhouette, assigned_at "
+                "FROM ml_cluster_assignment")
+        }
+        stock = {
+            int(row["product_id"]): int(row["stock_on_hand"])
+            for row in c.execute(
+                "SELECT product_id, stock_on_hand FROM inventory_current")
+        }
+        products = c.execute(
+            "SELECT product_id, name, category FROM products "
+            "WHERE is_active = 1 ORDER BY name").fetchall()
+        result = []
+        for product in products:
+            pid = int(product["product_id"])
+            feat = features.get(pid, {})
+            assignment = assignments.get(pid, {})
+            result.append({
+                "product_id": pid, "name": product["name"],
+                "category": product["category"],
+                "tier": assignment.get("tier"),
+                "cluster": assignment.get("cluster"),
+                "avg_daily_sales": feat.get("avg_daily_sales"),
+                "velocity": feat.get("velocity"),
+                "revenue": feat.get("revenue"),
+                "days_with_sales": feat.get("days_with_sales", 0),
+                "silhouette": assignment.get("silhouette"),
+                "stock_on_hand": stock.get(pid),
+                "assigned_at": assignment.get("assigned_at"),
+            })
+        return result
+    return q(f)
+
+
+def api_basket_products():
+    """All active products, annotated with their persisted rule count."""
+    def f(c):
+        return [dict(row) for row in c.execute(
+            """
+            SELECT p.product_id, p.name, COUNT(DISTINCT r.rec_id) AS rule_count
+            FROM products p
+            LEFT JOIN bundle_recommendations r
+              ON r.antecedent_id = p.product_id
+              OR r.consequent_id = p.product_id
+            WHERE p.is_active = 1
+            GROUP BY p.product_id, p.name
+            ORDER BY rule_count DESC, p.name
+            """)]
+    return q(f)
+
+
+def api_basket_rules(product_id: int):
+    """Persisted FP-Growth rules in which the selected product participates."""
+    def f(c):
+        product = c.execute(
+            "SELECT name FROM products WHERE product_id = ? AND is_active = 1",
+            (product_id,)).fetchone()
+        if product is None:
+            return {"product": None, "rules": []}
+        rows = c.execute(
+            """
+            SELECT r.rec_id, a.name AS antecedent, b.name AS consequent,
+                   CASE WHEN r.antecedent_id = ? THEN b.name ELSE a.name END
+                       AS associated_product,
+                   CASE WHEN r.antecedent_id = ?
+                        THEN 'Selected product → associated product'
+                        ELSE 'Associated product → selected product' END
+                       AS direction,
+                   r.support, r.confidence, r.lift, r.action, r.weekly_impact
+            FROM bundle_recommendations r
+            JOIN products a ON a.product_id = r.antecedent_id
+            JOIN products b ON b.product_id = r.consequent_id
+            WHERE r.antecedent_id = ? OR r.consequent_id = ?
+            ORDER BY r.lift DESC, r.weekly_impact DESC, r.rec_id
+            """, (product_id, product_id, product_id, product_id)).fetchall()
+        return {"product": product["name"], "rules": [dict(row) for row in rows]}
+    return q(f)
+
+
 def api_simulation():
     def f(c):
         rows = c.execute("SELECT policy, day, net_profit FROM "
@@ -181,7 +277,7 @@ def api_forecast():
         prods = [dict(r) for r in c.execute(
             "SELECT p.product_id, p.name, SUM(f.predicted_qty) next7 "
             "FROM ml_forecast_output f JOIN products p USING(product_id) "
-            "GROUP BY p.product_id ORDER BY next7 DESC LIMIT 30")]
+            "WHERE p.is_active = 1 GROUP BY p.product_id ORDER BY next7 DESC")]
         return prods
     return q(f)
 
@@ -194,7 +290,12 @@ def api_forecast_series(pid: int):
         fcst = [dict(r) for r in c.execute(
             "SELECT forecast_date date, predicted_qty FROM ml_forecast_output "
             "WHERE product_id = ? ORDER BY forecast_date", (pid,))]
-        return {"history": hist[-60:], "forecast": fcst}
+        metrics = c.execute(
+            "SELECT AVG(rmse) rmse, AVG(mae) mae, AVG(mape) mape, "
+            "MAX(model) model FROM ml_forecast_output WHERE product_id = ?",
+            (pid,)).fetchone()
+        return {"history": hist[-60:], "forecast": fcst,
+                "metrics": dict(metrics) if metrics else {}}
     return q(f)
 
 
@@ -283,6 +384,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_customers())
             if path == "/api/models":
                 return self._json(api_models())
+            if path == "/api/product-segments":
+                return self._json(api_product_segments())
+            if path == "/api/basket-products":
+                return self._json(api_basket_products())
+            if path.startswith("/api/basket-rules/"):
+                return self._json(api_basket_rules(int(path.rsplit("/", 1)[1])))
             if path == "/api/simulation":
                 return self._json(api_simulation())
             if path == "/api/forecast":
@@ -346,6 +453,7 @@ class Handler(BaseHTTPRequestHandler):
                 {"error": f"Too many attempts. Try again in "
                           f"{store.lock_remaining(email)}s."}, 429)
         def f(c):
+            store.ensure_table(c)
             return store.check_local_login(c, email,
                                            data.get("password", ""))
         user = q(f)
@@ -362,6 +470,7 @@ class Handler(BaseHTTPRequestHandler):
         data = json.loads(self._body() or b"{}")
         try:
             def f(c):
+                store.ensure_table(c)
                 return store.create_local_user(
                     c, data.get("email", ""), data.get("name", ""),
                     data.get("password", ""))
@@ -375,6 +484,7 @@ class Handler(BaseHTTPRequestHandler):
     def _google_demo(self):
         from src.auth import store, google_auth
         def f(c):
+            store.ensure_table(c)
             return store.upsert_oauth_user(
                 c, **{**google_auth.demo_google_user(),
                       "provider": "google-demo"})
