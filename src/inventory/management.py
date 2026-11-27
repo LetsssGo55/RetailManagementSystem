@@ -13,13 +13,16 @@ import sqlite3
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Upgrade an existing SQLite file without dropping or rewriting data."""
-    conn.executescript("""
+    """Upgrade an existing SQLite file without committing caller transactions."""
+    # Do not use sqlite3.Connection.executescript here: it implicitly commits
+    # an open transaction and would break the savepoint around stock updates.
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS product_barcodes (
         barcode TEXT PRIMARY KEY,
         product_id INTEGER NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
         created_at TEXT DEFAULT (datetime('now'))
-    );
+    )""")
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS inventory_movements (
         movement_id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER NOT NULL REFERENCES products(product_id),
@@ -34,13 +37,15 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         actor_email TEXT NOT NULL DEFAULT 'system',
         actor_name TEXT NOT NULL DEFAULT 'System',
         created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_inventory_movements_product
-        ON inventory_movements(product_id, movement_id DESC);
-    CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
-        ON inventory_movements(created_at DESC);
-    """)
-
+    )""")
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_inventory_movements_product
+           ON inventory_movements(product_id, movement_id DESC)"""
+    )
+    conn.execute(
+        """CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
+           ON inventory_movements(created_at DESC)"""
+    )
 
 @contextmanager
 def _atomic(conn: sqlite3.Connection):
