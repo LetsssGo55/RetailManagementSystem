@@ -890,16 +890,22 @@ async function loadFc(pid){
   $("#fc-summary").innerHTML=`<b>${esc(name)}</b> · Historical sales: ${fmt(histUnits)} units over ${histRows.length} days (${fmt(histAvg)} per day) · Next 7-day forecast: <b>${fmt(forecastUnits)} units</b> (${fmt(forecastUnits/7)} per day) · Forecast vs historical daily average: ${delta===null?"not available":(delta>=0?"+":"")+delta.toFixed(1)+"%"} · Product model metrics: RMSE ${fmt(metrics.rmse)}, MAE ${fmt(metrics.mae)}, MAPE ${metrics.mape==null?"—":fmt(metrics.mape)+"%"}.`;
 }
 async function fulfil(id){
-  const previewResponse=await api("/api/order/"+id+"/confirm",{method:"POST"});
+  const previewResponse=await api("/api/order/"+id+"/preview",{method:"POST"});
   const preview=await previewResponse.json();
-  if(!previewResponse.ok){alert(preview.error||"Order could not be confirmed.");return;}
+  if(!previewResponse.ok){alert(preview.error||"Could not review order.");return;}
   const summary=preview.summary||{};
   const details=(preview.lines||[]).map(x=>
     (x.product||("Line "+x.line_id))+": ordered "+fmt(x.ordered_qty)+
-    ", available "+fmt(x.available_qty)+", "+x.status).join("\\n");
-  const promptText="Order #"+id+" stock review\\n"+
-    "Available fulfilment: "+fmt(summary.fulfilment_pct)+"%\\n\\n"+
-    details+"\\n\\nConfirm and deduct these available quantities?";
+    ", available "+fmt(x.available_qty)+", "+x.status).join(String.fromCharCode(10));
+  const unresolved=(preview.lines||[]).filter(x=>["REVIEW","UNMATCHED"].includes(x.status));
+  const promptText="Order #"+id+" stock review"+String.fromCharCode(10)+
+    "Available fulfilment: "+fmt(summary.fulfilment_pct)+"%"+String.fromCharCode(10,10)+
+    details+String.fromCharCode(10,10)+"Confirm and deduct these available quantities?";
+  if(unresolved.length){
+    alert(promptText+String.fromCharCode(10,10)+
+      "Resolve the "+unresolved.length+" unmatched/review line(s) before fulfilment.");
+    return;
+  }
   if(!window.confirm(promptText))return;
   const response=await api("/api/fulfil/"+id,{method:"POST"});
   const result=await response.json();

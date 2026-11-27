@@ -443,8 +443,8 @@ class Handler(BaseHTTPRequestHandler):
                 tok = self.headers.get("Authorization", "").replace("Bearer ", "")
                 SESSIONS.pop(tok, None)
                 return self._json({"ok": True})
-            if path.startswith("/api/order/") and path.endswith("/confirm"):
-                return self._confirm_order(int(path.split("/")[-2]))
+            if path.startswith("/api/order/") and path.endswith("/preview"):
+                return self._preview_order(int(path.split("/")[-2]))
             if path == "/api/inventory/product":
                 return self._create_inventory_product()
             if path == "/api/inventory/adjust":
@@ -530,10 +530,12 @@ class Handler(BaseHTTPRequestHandler):
         return {"email": user.get("email", "system"),
                 "name": user.get("name", user.get("email", "System"))}
 
-    def _confirm_order(self, oid: int):
-        from src.orders import fulfilment
+    def _preview_order(self, oid: int):
+        from src.orders import availability
         def f(c):
-            summary = fulfilment.confirm_order(c, oid)
+            # Availability check updates line-level quantities but leaves the
+            # order in DRAFT until the operator accepts the review prompt.
+            summary = availability.check_order(c, oid)
             lines = [dict(r) for r in c.execute(
                 """SELECT l.line_id, l.ordered_qty, l.available_qty, l.status,
                           p.name AS product
