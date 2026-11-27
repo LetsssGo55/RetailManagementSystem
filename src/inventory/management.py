@@ -46,6 +46,17 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         """CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
            ON inventory_movements(created_at DESC)"""
     )
+    columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(inventory_movements)")
+    }
+    if "customer_id" not in columns:
+        conn.execute(
+            "ALTER TABLE inventory_movements ADD COLUMN customer_id INTEGER REFERENCES customers(customer_id)"
+        )
+    if "customer_name" not in columns:
+        conn.execute(
+            "ALTER TABLE inventory_movements ADD COLUMN customer_name TEXT"
+        )
 
 @contextmanager
 def _atomic(conn: sqlite3.Connection):
@@ -79,6 +90,8 @@ def record_stock_movement(
     reference_type: str | None = None,
     reference_id: int | None = None,
     note: str = "",
+    customer_id: int | None = None,
+    customer_name: str | None = None,
 ) -> int:
     """Insert one ledger row inside the caller's transaction; does not commit."""
     ensure_schema(conn)
@@ -92,11 +105,12 @@ def record_stock_movement(
     cur = conn.execute(
         """INSERT INTO inventory_movements
            (product_id, movement_type, quantity, change_qty, stock_before,
-            stock_after, reference_type, reference_id, note, actor_email, actor_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            stock_after, reference_type, reference_id, note, actor_email, actor_name,
+            customer_id, customer_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (int(product_id), str(movement_type).upper(), abs(change), change,
          before, after, reference_type, reference_id, str(note or "")[:500],
-         email, name),
+         email, name, customer_id, str(customer_name or "")[:160] or None),
     )
     return int(cur.lastrowid)
 
@@ -305,7 +319,8 @@ def movement_history(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
         """SELECT m.movement_id, m.product_id, p.name AS product, p.sku,
                   m.movement_type, m.quantity, m.change_qty,
                   m.stock_before, m.stock_after, m.reference_type,
-                  m.reference_id, m.note, m.actor_email, m.actor_name, m.created_at
+                  m.reference_id, m.note, m.actor_email, m.actor_name,
+                  m.customer_id, m.customer_name, p.unit, m.created_at
            FROM inventory_movements m
            JOIN products p USING(product_id)
            ORDER BY m.movement_id DESC LIMIT ?""",

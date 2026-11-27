@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
     note          TEXT,
     actor_email   TEXT NOT NULL DEFAULT 'system',
     actor_name    TEXT NOT NULL DEFAULT 'System',
+    customer_id   INTEGER REFERENCES customers(customer_id),
+    customer_name TEXT,
     created_at    TEXT DEFAULT (datetime('now'))
 );
 

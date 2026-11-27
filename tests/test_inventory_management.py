@@ -116,6 +116,8 @@ def test_barcode_order_deducts_stock_once_and_logs_confirming_user(conn):
     assert movement["reference_id"] == order_id
     assert movement["actor_email"] == "counter@example.com"
     assert movement["actor_name"] == "Counter Operator"
+    assert movement["customer_name"] == "Barcode Buyer"
+    assert movement["customer_id"] == 1
 
     with pytest.raises(OrderError, match="already fulfilled"):
         fulfilment.fulfil_order(conn, order_id, actor=actor)

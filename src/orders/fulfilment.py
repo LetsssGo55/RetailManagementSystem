@@ -56,7 +56,10 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int, actor: dict | None = N
     column; the percentage carries the nuance).
     """
     order = conn.execute(
-        "SELECT status, fulfilment_pct FROM customer_orders WHERE order_id = ?",
+        """SELECT o.status, o.fulfilment_pct, o.customer_id,
+                  COALESCE(c.name, 'Walk-in') AS customer_name
+           FROM customer_orders o LEFT JOIN customers c USING(customer_id)
+           WHERE o.order_id = ?""",
         (order_id,)).fetchone()
     if order is None:
         raise OrderError(f"Unknown order_id={order_id}")
@@ -150,7 +153,11 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int, actor: dict | None = N
             conn, int(ln["product_id"]), -avail, actual_before, actual_after,
             movement_type="ORDER_FULFILMENT", actor=actor,
             reference_type="ORDER", reference_id=int(order_id),
-            note=f"Customer order #{order_id}, line #{ln['line_id']}",
+            note=f"{avail:g} {new_stock and '' or ''}units shipped for "
+                 f"{order['customer_name']} (order #{order_id}, line #{ln['line_id']}); "
+                 f"remaining stock {actual_after:g}",
+            customer_id=order["customer_id"],
+            customer_name=order["customer_name"],
         )
         if new_stock and new_stock["stock_on_hand"] <= new_stock["reorder_level"]:
             low_stock.append(ln["product_id"])

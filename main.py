@@ -371,7 +371,10 @@ def _order_demo(conn):
     # clean previous demo orders so the demo is repeatable —
     # restore any stock that a prior run shipped, then drop the rows
     old = conn.execute(
-        "SELECT order_id FROM customer_orders WHERE source = 'OCR-DEMO'"
+        """SELECT o.order_id, o.customer_id,
+                  COALESCE(c.name, 'Walk-in') AS customer_name
+           FROM customer_orders o LEFT JOIN customers c USING(customer_id)
+           WHERE o.source = 'OCR-DEMO'"""
     ).fetchall()
     for r in old:
         shipped = conn.execute(
@@ -379,10 +382,27 @@ def _order_demo(conn):
             "WHERE order_id = ? AND status = 'FULFILLED' "
             "  AND product_id IS NOT NULL", (r["order_id"],)).fetchall()
         for ln in shipped:
+            from src.inventory import management as inventory_management
+            qty = float(ln["available_qty"] or 0)
+            before_row = conn.execute(
+                "SELECT stock_on_hand FROM inventory_current WHERE product_id = ?",
+                (ln["product_id"],),
+            ).fetchone()
+            before = float(before_row["stock_on_hand"] or 0) if before_row else 0.0
             conn.execute(
                 "UPDATE inventory_current "
-                "SET stock_on_hand = stock_on_hand + ? WHERE product_id = ?",
-                (float(ln["available_qty"] or 0), ln["product_id"]))
+                "SET stock_on_hand = stock_on_hand + ?, last_updated = datetime('now') "
+                "WHERE product_id = ?",
+                (qty, ln["product_id"]))
+            if qty > 0:
+                inventory_management.record_stock_movement(
+                    conn, int(ln["product_id"]), qty, before, before + qty,
+                    movement_type="DEMO_RESTORE",
+                    actor={"name": "System demo reset", "email": "system"},
+                    reference_type="ORDER", reference_id=int(r["order_id"]),
+                    note=f"Restored {qty:g} units after demo order; remaining stock {before + qty:g}",
+                    customer_id=r["customer_id"], customer_name=r["customer_name"],
+                )
         conn.execute("DELETE FROM order_line_items WHERE order_id = ?",
                      (r["order_id"],))
         conn.execute("DELETE FROM customer_orders WHERE order_id = ?",
