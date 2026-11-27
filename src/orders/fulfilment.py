@@ -153,7 +153,7 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int, actor: dict | None = N
             conn, int(ln["product_id"]), -avail, actual_before, actual_after,
             movement_type="ORDER_FULFILMENT", actor=actor,
             reference_type="ORDER", reference_id=int(order_id),
-            note=f"{avail:g} {new_stock and '' or ''}units shipped for "
+            note=f"{avail:g} units shipped for "
                  f"{order['customer_name']} (order #{order_id}, line #{ln['line_id']}); "
                  f"remaining stock {actual_after:g}",
             customer_id=order["customer_id"],
@@ -167,6 +167,7 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int, actor: dict | None = N
                  "WHERE order_id = ?",
                  (OrderStatus.FULFILLED.value, pct, order_id))
     conn.commit()
+    inventory_management.sync_audit_file(conn)
 
     return {
         "order_id": order_id,

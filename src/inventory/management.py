@@ -8,8 +8,12 @@ keep referential integrity.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import csv
 import math
+import os
 import sqlite3
+import tempfile
+from pathlib import Path
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -172,6 +176,8 @@ def adjust_stock(
             movement_type="MANUAL_ADD" if action == "add" else "MANUAL_REMOVE",
             actor=actor, note=note or f"Manual {action} of {qty} units",
         )
+    if not conn.in_transaction:
+        sync_audit_file(conn)
     return {
         "product_id": int(product_id), "product": product["name"],
         "stock_before": before, "stock_after": after,
@@ -269,6 +275,8 @@ def create_product(
                 conn, pid, stock, 0, stock, movement_type="OPENING_BALANCE",
                 actor=actor, note="Initial stock when product was created",
             )
+    if not conn.in_transaction:
+        sync_audit_file(conn)
     return pid
 
 
@@ -326,3 +334,73 @@ def movement_history(conn: sqlite3.Connection, limit: int = 100) -> list[dict]:
            ORDER BY m.movement_id DESC LIMIT ?""",
         (limit,),
     ).fetchall()]
+
+def sync_audit_file(conn: sqlite3.Connection) -> str | None:
+    """
+    Rebuild a timestamped CSV log from the authoritative SQLite movement ledger.
+
+    The file is written to a temporary path and atomically replaced, so it
+    cannot contain a half-written row. The SQLite ledger remains the source of
+    truth; the CSV is a durable human-readable copy beside the database.
+    """
+    ensure_schema(conn)
+    db_row = conn.execute("PRAGMA database_list").fetchone()
+    db_path = str(db_row[2]) if db_row and len(db_row) > 2 else ""
+    if not db_path or db_path == ":memory:":
+        return None
+    directory = Path(db_path).resolve().parent / "logs"
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / "inventory_movements.csv"
+    rows = conn.execute(
+        """SELECT m.movement_id, m.created_at, m.movement_type, p.sku,
+                  p.name AS product, p.unit, m.quantity, m.change_qty,
+                  m.stock_before, m.stock_after, m.customer_id, m.customer_name,
+                  m.actor_name, m.actor_email, m.reference_type, m.reference_id,
+                  m.note
+           FROM inventory_movements m
+           JOIN products p USING(product_id)
+           ORDER BY m.movement_id"""
+    ).fetchall()
+    fields = [
+        "movement_id", "date_time", "movement_type", "sku", "product", "unit",
+        "quantity", "change_qty", "stock_before", "remaining_stock",
+        "customer_id", "buyer", "operator_name", "operator_email",
+        "reference_type", "reference_id", "note",
+    ]
+    fd, temp_name = tempfile.mkstemp(prefix="inventory_movements_", suffix=".tmp",
+                                     dir=str(directory))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({
+                    "movement_id": row["movement_id"],
+                    "date_time": row["created_at"],
+                    "movement_type": row["movement_type"],
+                    "sku": row["sku"],
+                    "product": row["product"],
+                    "unit": row["unit"],
+                    "quantity": row["quantity"],
+                    "change_qty": row["change_qty"],
+                    "stock_before": row["stock_before"],
+                    "remaining_stock": row["stock_after"],
+                    "customer_id": row["customer_id"],
+                    "buyer": row["customer_name"],
+                    "operator_name": row["actor_name"],
+                    "operator_email": row["actor_email"],
+                    "reference_type": row["reference_type"],
+                    "reference_id": row["reference_id"],
+                    "note": row["note"],
+                })
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, target)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
+    return str(target)
+

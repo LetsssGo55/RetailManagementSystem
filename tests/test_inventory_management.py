@@ -124,3 +124,16 @@ def test_barcode_order_deducts_stock_once_and_logs_confirming_user(conn):
     assert conn.execute(
         "SELECT COUNT(*) FROM inventory_movements WHERE movement_type = 'ORDER_FULFILMENT'"
     ).fetchone()[0] == 1
+
+    log_path = management.sync_audit_file(conn)
+    assert log_path is not None
+    from pathlib import Path
+    import csv
+    with Path(log_path).open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    order_row = next(row for row in rows if row["movement_type"] == "ORDER_FULFILMENT")
+    assert order_row["buyer"] == "Barcode Buyer"
+    assert order_row["operator_email"] == "counter@example.com"
+    assert float(order_row["change_qty"]) == -2
+    assert float(order_row["remaining_stock"]) == 10
+
