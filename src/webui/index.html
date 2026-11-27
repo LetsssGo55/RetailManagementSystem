@@ -902,35 +902,35 @@ async function loadStockControl(){
       .reduce((a,r)=>a+Number(r.delta||0),0);
     const orders = L.filter(r=>r.change_type==="ORDER_DEDUCT").length;
     const users = new Set(L.map(r=>r.user_email)).size;
-    $("sc-kpis").innerHTML = [
+    $("#sc-kpis").innerHTML = [
       ["Stock added", inr(added), ""],
       ["Stock removed", inr(removed), ""],
       ["Order deductions", orders, "lines"],
       ["Users tracked", users, ""],
     ].map(s=>`<div class="card stat"><div class="lbl">${s[0]}</div>
       <div class="val">${s[1]}</div><div class="delta">${s[2]}</div></div>`).join("");
-    table($("sc-ledger"),["When","User","Type","Delta","Before","After","Reason / ref"],
+    table($("#sc-ledger"),["When","User","Type","Delta","Before","After","Reason / ref"],
       L.map(r=>[
         (r.created_at||"").slice(0,16), esc(r.user_email),
         stBadge(r.change_type), (r.delta>=0?"+":"")+r.delta,
         r.qty_before, r.qty_after,
         esc((r.reason||"")+" "+(r.reference_id?`(${r.reference_type}#${r.reference_id})`:""))
       ]));
-  }catch(e){$("sc-msg").textContent="Ledger load failed: "+e;}
+  }catch(e){$("#sc-msg").textContent="Ledger load failed: "+e;}
   // product picker for manual adjustment
   try{
     const seg = await J("/api/product-segments");
-    $("sc-product").innerHTML = seg.map(p=>
+    $("#sc-product").innerHTML = seg.map(p=>
       `<option value="${p.product_id}">${esc(p.name)} (stock ${p.stock_on_hand ?? "—"})</option>`).join("");
   }catch(e){/* picker optional */}
 }
 async function scAdjust(){
-  const pid = +$("sc-product").value;
-  const qty = +$("sc-qty").value;
-  const action = $("sc-action").value;
-  const user = $("sc-user").value.trim();
-  const reason = $("sc-reason").value.trim()||null;
-  if(!pid||!qty){$("sc-msg").textContent="Select a product and qty.";return;}
+  const pid = +$("#sc-product").value;
+  const qty = +$("#sc-qty").value;
+  const action = $("#sc-action").value;
+  const user = $("#sc-user").value.trim();
+  const reason = $("#sc-reason").value.trim()||null;
+  if(!pid||!qty){$("#sc-msg").textContent="Select a product and qty.";return;}
   const body = {product_id:pid,qty,user,reason};
   try{
     let r;
@@ -941,56 +941,56 @@ async function scAdjust(){
     else r = await api("/api/inventory/set",{method:"POST",
       headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const d = await r.json();
-    if(!r.ok){$("sc-msg").textContent=d.error||"adjust failed";return;}
-    $("sc-msg").textContent=`✅ ${d.change_type} ${d.delta >= 0 ? "+" : ""}${d.delta} → stock ${d.qty_after} (user ${d.user_email})`;
-    $("sc-qty").value="";
+    if(!r.ok){$("#sc-msg").textContent=d.error||"adjust failed";return;}
+    $("#sc-msg").textContent=`✅ ${d.change_type} ${d.delta >= 0 ? "+" : ""}${d.delta} → stock ${d.qty_after} (user ${d.user_email})`;
+    $("#sc-qty").value="";
     loadStockControl();loadAll();
-  }catch(e){$("sc-msg").textContent="Adjust failed: "+e;}
+  }catch(e){$("#sc-msg").textContent="Adjust failed: "+e;}
 }
-$("sc-file").addEventListener("change",e=>{
+$("#sc-file").addEventListener("change",e=>{
   if(e.target.files[0]) scScanFile(e.target.files[0]);});
-$("sc-drop").addEventListener("click",()=>$("sc-file").click());
-$("sc-drop").addEventListener("dragover",e=>e.preventDefault());
-$("sc-drop").addEventListener("drop",e=>{
+$("#sc-drop").addEventListener("click",()=>$("#sc-file").click());
+$("#sc-drop").addEventListener("dragover",e=>e.preventDefault());
+$("#sc-drop").addEventListener("drop",e=>{
   e.preventDefault();
   if(e.dataTransfer.files[0]) scScanFile(e.dataTransfer.files[0]);});
 async function scScanFile(file){
-  $("sc-scan-msg").textContent="scanning…";
-  $("sc-table").innerHTML="";SCAN_ITEMS=[];$("sc-confirm").disabled=true;
+  $("#sc-scan-msg").textContent="scanning…";
+  $("#sc-table").innerHTML="";SCAN_ITEMS=[];$("#sc-confirm").disabled=true;
   const r = await api("/api/scan",{method:"POST",
     headers:{"Content-Type":file.type||"application/octet-stream","X-Filename":file.name},
     body:await file.arrayBuffer()});
   const d = await r.json();
-  if(!r.ok){$("sc-scan-msg").textContent=d.error||"scan failed";return;}
+  if(!r.ok){$("#sc-scan-msg").textContent=d.error||"scan failed";return;}
   SCAN_ITEMS = d.items||[];
   const s = d.summary||{};
-  $("sc-scan-msg").textContent = `${s.matched}/${s.lines} matched · ${s.in_stock} ready · ${s.partial} partial · ${s.unavailable} unavailable`;
-  table($("sc-table"),["Receipt text","Qty","Matched product","Match by","Stock","Avail","Status"],
+  $("#sc-scan-msg").textContent = `${s.matched}/${s.lines} matched · ${s.in_stock} ready · ${s.partial} partial · ${s.unavailable} unavailable`;
+  table($("#sc-table"),["Receipt text","Qty","Matched product","Match by","Stock","Avail","Status"],
     SCAN_ITEMS.map(it=>[
       esc(it.raw_text), it.qty,
       esc(it.matched_name||"—"), esc(it.match_by||"—"),
       it.stock_on_hand, it.available_qty,
       stBadge(it.status)+(it.in_stock?"":" <span class=\"red\">out of stock</span>")
     ]));
-  $("sc-confirm").disabled = SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0)?false:true;
+  $("#sc-confirm").disabled = SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0)?false:true;
   // enable only if at least one deductible line
-  $("sc-confirm").disabled = !SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0);
+  $("#sc-confirm").disabled = !SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0);
 }
 async function scConfirm(){
-  const user = $("sc-user").value.trim();
+  const user = $("#sc-user").value.trim();
   const body = {items:SCAN_ITEMS,user_email:user||undefined};
   const r = await api("/api/scan/confirm",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const d = await r.json();
   if(!r.ok){alert(d.error||"confirm failed");return;}
   alert(`✅ Order #${d.order_id} confirmed — ${d.lines_deducted} line(s) deducted, total ₹${d.total_value}`);
-  SCAN_ITEMS=[];$("sc-table").innerHTML="";$("sc-confirm").disabled=true;
-  $("sc-scan-msg").textContent="";$("sc-file").value="";
+  SCAN_ITEMS=[];$("#sc-table").innerHTML="";$("#sc-confirm").disabled=true;
+  $("#sc-scan-msg").textContent="";$("#sc-file").value="";
   loadStockControl();loadAll();
 }
 function scClear(){
-  SCAN_ITEMS=[];$("sc-table").innerHTML="";$("sc-confirm").disabled=true;
-  $("sc-scan-msg").textContent="";$("sc-file").value="";
+  SCAN_ITEMS=[];$("#sc-table").innerHTML="";$("#sc-confirm").disabled=true;
+  $("#sc-scan-msg").textContent="";$("#sc-file").value="";
 }
 /* assistant chat */
 const CHIPS=["Which products need reordering?","What should I markdown?",
