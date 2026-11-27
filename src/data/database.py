@@ -34,6 +34,34 @@ CREATE TABLE IF NOT EXISTS inventory_current (
     last_updated   TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────────────────────────────────────────────────────
+-- STOCK AUDIT LEDGER  (Phase 13 — manual inventory management)
+-- ─────────────────────────────────────────────────────────────
+-- Immutable trail of every stock movement: who changed what, when, the
+-- qty before/after and why. change_type ∈ {ADD, REMOVE, SET, ORDER_DEDUCT,
+-- ORDER_RESTORE}. reference_type ∈ {manual, order, scan}.
+CREATE TABLE IF NOT EXISTS stock_ledger (
+    ledger_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id     INTEGER NOT NULL REFERENCES products(product_id),
+    user_email     TEXT NOT NULL,
+    user_name      TEXT,
+    change_type    TEXT NOT NULL
+        CHECK (change_type IN ('ADD','REMOVE','SET','ORDER_DEDUCT','ORDER_RESTORE')),
+    delta          INTEGER NOT NULL,
+    qty_before     INTEGER NOT NULL,
+    qty_after      INTEGER NOT NULL,
+    reason         TEXT,
+    reference_type TEXT DEFAULT 'manual'
+        CHECK (reference_type IN ('manual','order','scan')),
+    reference_id   INTEGER,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_product
+    ON stock_ledger(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_created
+    ON stock_ledger(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS daily_sales_history (
     date        TEXT NOT NULL,
     product_id  INTEGER NOT NULL REFERENCES products(product_id),
@@ -226,7 +254,7 @@ CORE_TABLES = [
     "bundle_recommendations", "markdown_alerts_log", "price_history_log",
     "personalisation_profiles", "simulation_results", "customer_orders",
     "daily_sales_history", "wholesale_price_history", "inventory_current",
-    "customers", "products",
+    "stock_ledger", "customers", "products",
 ]
 
 

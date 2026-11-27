@@ -263,7 +263,8 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
         <button class="nav-item" data-view="orders">🛍 Orders
           <span class="badge-count" id="n-orders">0</span></button>
         <button class="nav-item" data-view="ocr">⬒ OCR Intake</button>
-        <button class="nav-item" data-view="inventory">▣ Inventory</button></div>
+        <button class="nav-item" data-view="inventory">▣ Inventory</button>
+        <button class="nav-item" data-view="stock-control">▣ Stock Control</button></div>
       <div class="nav-group"><div class="nav-label">Intelligence</div>
         <button class="nav-item" data-view="models">↗ Model Performance</button>
         <button class="nav-item" data-view="simulation">⚗ Simulation</button>
@@ -367,6 +368,57 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
           <button class="btn outline" onclick="exportCSV('inventory')">CSV</button></div>
         <div class="card"><div class="card-b" style="padding-top:0">
           <table id="inv-table"></table></div></div>
+      </section>
+
+      <!-- STOCK CONTROL -->
+      <section class="view" id="view-stock-control">
+        <div class="page-head"><div><h1>Stock Control</h1>
+          <p>Add / remove stock manually, scan receipts, and review the audit ledger.</p></div>
+          <button class="btn outline" onclick="loadStockControl()">⟳ Refresh</button></div>
+        <div class="grid cols-3">
+          <div class="card">
+            <div class="card-h"><h3>Adjust stock (manual)</h3></div>
+            <div class="card-b" style="padding:.6rem 1rem 1rem;display:flex;flex-direction:column;gap:.6rem">
+              <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <select class="sel" id="sc-product" style="flex:1;min-width:220px"></select>
+                <input type="number" id="sc-qty" placeholder="qty" min="0" step="1">
+                <select class="sel" id="sc-action">
+                  <option value="add">Add stock</option>
+                  <option value="remove">Remove stock</option>
+                  <option value="set">Set to level</option>
+                </select>
+                <button class="btn" onclick="scAdjust()">Apply</button>
+              </div>
+              <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <input type="text" id="sc-user" placeholder="your email">
+                <input type="text" id="sc-reason" placeholder="reason (optional)">
+              </div>
+              <div id="sc-msg" class="muted" style="font-size:12.5px"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Scan receipt &amp; match to stock</h3></div>
+            <div class="card-b" style="padding-top:0">
+              <div class="empty" id="sc-drop"
+                style="border:1.5px dashed hsl(var(--border));border-radius:var(--radius);cursor:pointer;padding:1.2rem;text-align:center;margin-bottom:.6rem">
+                ⬆ Drop / click a receipt image or PDF<br>
+                <span class="muted">matched lines show stock + availability</span>
+              </div>
+              <input type="file" id="sc-file" accept="image/*,application/pdf" hidden>
+              <div id="sc-scan-msg" class="muted" style="font-size:12.5px;margin-bottom:.5rem"></div>
+              <div style="overflow-x:auto"><table id="sc-table"></table></div>
+              <div style="margin-top:.5rem;display:flex;gap:.5rem">
+                <button class="btn" id="sc-confirm" onclick="scConfirm()" disabled>✅ Confirm &amp; deduct stock</button>
+                <button class="btn outline" onclick="scClear()">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>Stock audit ledger</h3></div>
+            <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="sc-ledger"></table></div>
+          </div>
+        </div>
+        <div class="grid cols-4" id="sc-kpis" style="margin-top:.4rem"></div>
       </section>
 
       <!-- MODELS -->
@@ -739,6 +791,7 @@ async function loadAll(){
   $("#ord-pick").onchange=e=>loadDetail(+e.target.value);
   if(ord.recent.length)loadDetail(ord.recent[0].order_id);
   loadPending();
+  loadStockControl();
 }
 async function loadFc(pid){
   if(!pid)return;
@@ -837,6 +890,108 @@ function exportCSV(kind){
   a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download=kind+".csv";a.click();
 }
+
+/* ---------------- stock control ---------------- */
+let SCAN_ITEMS=[];   // last scanned items, pending confirm
+async function loadStockControl(){
+  try{
+    const ledger = await api("/api/inventory-ledger?limit=60").then(r=>r.json());
+    const L = ledger||[];
+    const added = L.filter(r=>r.change_type==="ADD").reduce((a,r)=>a+Number(r.delta||0),0);
+    const removed = L.filter(r=>r.change_type==="REMOVE"||r.change_type==="ORDER_DEDUCT")
+      .reduce((a,r)=>a+Number(r.delta||0),0);
+    const orders = L.filter(r=>r.change_type==="ORDER_DEDUCT").length;
+    const users = new Set(L.map(r=>r.user_email)).size;
+    $("sc-kpis").innerHTML = [
+      ["Stock added", inr(added), ""],
+      ["Stock removed", inr(removed), ""],
+      ["Order deductions", orders, "lines"],
+      ["Users tracked", users, ""],
+    ].map(s=>`<div class="card stat"><div class="lbl">${s[0]}</div>
+      <div class="val">${s[1]}</div><div class="delta">${s[2]}</div></div>`).join("");
+    table($("sc-ledger"),["When","User","Type","Delta","Before","After","Reason / ref"],
+      L.map(r=>[
+        (r.created_at||"").slice(0,16), esc(r.user_email),
+        stBadge(r.change_type), (r.delta>=0?"+":"")+r.delta,
+        r.qty_before, r.qty_after,
+        esc((r.reason||"")+" "+(r.reference_id?`(${r.reference_type}#${r.reference_id})`:""))
+      ]));
+  }catch(e){$("sc-msg").textContent="Ledger load failed: "+e;}
+  // product picker for manual adjustment
+  try{
+    const seg = await J("/api/product-segments");
+    $("sc-product").innerHTML = seg.map(p=>
+      `<option value="${p.product_id}">${esc(p.name)} (stock ${p.stock_on_hand??\"—\"})</option>`).join("");
+  }catch(e){/* picker optional */}
+}
+async function scAdjust(){
+  const pid = +$("sc-product").value;
+  const qty = +$("sc-qty").value;
+  const action = $("sc-action").value;
+  const user = $("sc-user").value.trim();
+  const reason = $("sc-reason").value.trim()||null;
+  if(!pid||!qty){$("sc-msg").textContent="Select a product and qty.";return;}
+  const body = {product_id:pid,qty,user,reason};
+  try{
+    let r;
+    if(action==="add") r = await api("/api/inventory/add",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    else if(action==="remove") r = await api("/api/inventory/remove",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    else r = await api("/api/inventory/set",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d = await r.json();
+    if(!r.ok){$("sc-msg").textContent=d.error||"adjust failed";return;}
+    $("sc-msg").textContent=`✅ ${d.change_type} ${d.delta:+d} → stock ${d.qty_after} (user ${d.user_email})`;
+    $("sc-qty").value="";
+    loadStockControl();loadAll();
+  }catch(e){$("sc-msg").textContent="Adjust failed: "+e;}
+}
+$("sc-file").addEventListener("change",e=>{
+  if(e.target.files[0]) scScanFile(e.target.files[0]);});
+$("sc-drop").addEventListener("click",()=>$("sc-file").click());
+$("sc-drop").addEventListener("dragover",e=>e.preventDefault());
+$("sc-drop").addEventListener("drop",e=>{
+  e.preventDefault();
+  if(e.dataTransfer.files[0]) scScanFile(e.dataTransfer.files[0]);});
+async function scScanFile(file){
+  $("sc-scan-msg").textContent="scanning…";
+  $("sc-table").innerHTML="";SCAN_ITEMS=[];$("sc-confirm").disabled=true;
+  const r = await api("/api/scan",{method:"POST",
+    headers:{"Content-Type":file.type||"application/octet-stream","X-Filename":file.name},
+    body:await file.arrayBuffer()});
+  const d = await r.json();
+  if(!r.ok){$("sc-scan-msg").textContent=d.error||"scan failed";return;}
+  SCAN_ITEMS = d.items||[];
+  const s = d.summary||{};
+  $("sc-scan-msg").textContent = `${s.matched}/${s.lines} matched · ${s.in_stock} ready · ${s.partial} partial · ${s.unavailable} unavailable`;
+  table($("sc-table"),["Receipt text","Qty","Matched product","Match by","Stock","Avail","Status"],
+    SCAN_ITEMS.map(it=>[
+      esc(it.raw_text), it.qty,
+      esc(it.matched_name||"—"), esc(it.match_by||"—"),
+      it.stock_on_hand, it.available_qty,
+      stBadge(it.status)+(it.in_stock?"":" <span class=\"red\">out of stock</span>")
+    ]));
+  $("sc-confirm").disabled = SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0)?false:true;
+  // enable only if at least one deductible line
+  $("sc-confirm").disabled = !SCAN_ITEMS.some(i=>i.product_id&&i.available_qty>0);
+}
+async function scConfirm(){
+  const user = $("sc-user").value.trim();
+  const body = {items:SCAN_ITEMS,user_email:user||undefined};
+  const r = await api("/api/scan/confirm",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(!r.ok){alert(d.error||"confirm failed");return;}
+  alert(`✅ Order #${d.order_id} confirmed — ${d.lines_deducted} line(s) deducted, total ₹${d.total_value}`);
+  SCAN_ITEMS=[];$("sc-table").innerHTML="";$("sc-confirm").disabled=true;
+  $("sc-scan-msg").textContent="";$("sc-file").value="";
+  loadStockControl();loadAll();
+}
+function scClear(){
+  SCAN_ITEMS=[];$("sc-table").innerHTML="";$("sc-confirm").disabled=true;
+  $("sc-scan-msg").textContent="";$("sc-file").value="";
+}
 /* assistant chat */
 const CHIPS=["Which products need reordering?","What should I markdown?",
   "Best bundle deals","Stock of Potato","Price of Tata Tea",
@@ -866,8 +1021,9 @@ async function ask(qq){
 
 /* ---------------- nav/theme ---------------- */
 const names={dashboard:"Dashboard",cards:"Decision Cards",orders:"Orders",
-  ocr:"OCR Intake",inventory:"Inventory",models:"Model Performance",
-  simulation:"Simulation",customers:"Customers",assistant:"AI Assistant"};
+  ocr:"OCR Intake",inventory:"Inventory","stock-control":"Stock Control",
+  models:"Model Performance",simulation:"Simulation",customers:"Customers",
+  assistant:"AI Assistant"};
 function go(v){
   document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
   $("#view-"+v).classList.add("active");

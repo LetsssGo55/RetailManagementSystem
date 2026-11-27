@@ -28,6 +28,7 @@ def test_all_tables_created(conn):
         "procurement_alerts", "ml_forecast_output", "ml_cluster_assignment",
         "bundle_recommendations", "markdown_alerts_log", "price_history_log",
         "personalisation_profiles", "config_parameters", "simulation_results",
+        "stock_ledger",
     }
     missing = expected - tables
     assert not missing, f"Missing tables: {missing}"

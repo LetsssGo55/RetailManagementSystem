@@ -249,6 +249,72 @@ def api_basket_rules(product_id: int):
     return q(f)
 
 
+def api_inventory_ledger(product_id=None, limit=100):
+    """GET /api/inventory-ledger — stock audit trail (newest first)."""
+    def f(c):
+        from src.inventory import management
+        pid = int(product_id) if product_id is not None else None
+        return management.get_ledger(c, product_id=pid, limit=int(limit))
+    return q(f)
+
+
+def api_inventory_add(data):
+    """POST /api/inventory/add  {product_id, qty, user_email, user_name, reason}"""
+    from src.inventory import management
+    def f(c):
+        return management.add_stock(
+            c, int(data["product_id"]), int(data["qty"]),
+            data.get("user_email", "store-admin@local"),
+            data.get("user_name"), data.get("reason"))
+    return q(f)
+
+
+def api_inventory_remove(data):
+    """POST /api/inventory/remove  {product_id, qty, user_email, user_name, reason}"""
+    from src.inventory import management
+    def f(c):
+        return management.remove_stock(
+            c, int(data["product_id"]), int(data["qty"]),
+            data.get("user_email", "store-admin@local"),
+            data.get("user_name"), data.get("reason"))
+    return q(f)
+
+
+def api_inventory_set(data):
+    """POST /api/inventory/set  {product_id, qty, user_email, user_name, reason}"""
+    from src.inventory import management
+    def f(c):
+        return management.set_stock(
+            c, int(data["product_id"]), int(data["qty"]),
+            data.get("user_email", "store-admin@local"),
+            data.get("user_name"), data.get("reason"))
+    return q(f)
+
+
+def api_scan(file_bytes: bytes, filename: str):
+    """POST /api/scan  — scan a receipt image/PDF and match lines to stock."""
+    from pathlib import Path
+    import tempfile
+    from src.ocr import scanner
+    def f(c):
+        suffix = Path(filename).suffix.lower() or ".png"
+        tmp = Path(tempfile.mkdtemp(prefix="ui_scan_")) / ("scan" + suffix)
+        tmp.write_bytes(file_bytes)
+        return scanner.scan_file(tmp, conn=c)
+    return q(f)
+
+
+def api_scan_confirm(data):
+    """POST /api/scan/confirm  {items, user_email, user_name} — deduct scanned stock."""
+    from src.ocr import scanner
+    def f(c):
+        return scanner.confirm_scanned_order(
+            c, data["items"],
+            data.get("user_email", "store-admin@local"),
+            data.get("user_name"))
+    return q(f)
+
+
 def api_simulation():
     def f(c):
         rows = c.execute("SELECT policy, day, net_profit FROM "
@@ -380,6 +446,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_orders())
             if path == "/api/inventory":
                 return self._json(api_inventory())
+            if path == "/api/inventory-ledger":
+                from urllib.parse import parse_qs, urlparse
+                qs = parse_qs(urlparse(self.path).query)
+                pid = qs.get("product", [None])[0]
+                limit = int(qs.get("limit", ["100"])[0])
+                return self._json(api_inventory_ledger(pid, limit))
             if path == "/api/customers":
                 return self._json(api_customers())
             if path == "/api/models":
@@ -439,6 +511,21 @@ class Handler(BaseHTTPRequestHandler):
                                                int(data["product_id"]))
                 q(f)
                 return self._json({"ok": True})
+            if path == "/api/inventory/add":
+                data = json.loads(self._body() or b"{}")
+                return self._json(api_inventory_add(data))
+            if path == "/api/inventory/remove":
+                data = json.loads(self._body() or b"{}")
+                return self._json(api_inventory_remove(data))
+            if path == "/api/inventory/set":
+                data = json.loads(self._body() or b"{}")
+                return self._json(api_inventory_set(data))
+            if path == "/api/scan":
+                filename = self.headers.get("X-Filename", "scan.png")
+                return self._json(api_scan(self._body(), filename))
+            if path == "/api/scan/confirm":
+                data = json.loads(self._body() or b"{}")
+                return self._json(api_scan_confirm(data))
         except Exception as e:
             return self._json({"error": f"{e.__class__.__name__}: {e}"}, 500)
         self._json({"error": "not found"}, 404)

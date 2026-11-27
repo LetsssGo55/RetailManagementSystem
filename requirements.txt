@@ -17,6 +17,10 @@ opencv-python>=4.8
 Pillow>=10.0
 rapidfuzz>=3.5
 
+# Receipt scanning — PDF text extraction (one of these is needed to scan PDF
+# receipts; image slips only need Tesseract/OpenCV above)
+pypdf>=4.0
+
 # Reporting & dashboard
 reportlab>=4.0
 streamlit>=1.30

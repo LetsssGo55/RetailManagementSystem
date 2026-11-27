@@ -536,10 +536,135 @@ def cmd_inventory(args):
                 print(f"{r['po_id']:>4} {r['name'][:30]:<30} {r['qty']:>6} "
                       f"{r['eoq']:>7} {r['rop']:>7} {r['priority']:>8}  "
                       f"{r['status']}")
+
+        elif action in ("add", "remove", "set"):
+            _inventory_adjust(conn, action, args)
+
+        elif action == "ledger":
+            _inventory_ledger(conn, args)
+
+        elif action == "scan":
+            _inventory_scan(conn, args)
+
         else:
             print(f"Unknown inventory action: {action}")
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# inventory: manual stock management (Phase 13)
+# ---------------------------------------------------------------------------
+
+def _inventory_adjust(conn, action: str, args) -> None:
+    """add | remove | set <product_id> <qty> [--user] [--name] [--reason]."""
+    if len(args.args) < 2:
+        print(f"Usage: python main.py inventory {action} <product_id> <qty>"
+              f"\n              [--user <email>] [--name <name>] [--reason <text>]")
+        return
+    try:
+        pid = int(args.args[0]); qty = int(args.args[1])
+    except ValueError:
+        print("❌ product_id and qty must be integers.")
+        return
+    from src.inventory import management
+    user = args.user or "store-admin@local"
+    if action == "add":
+        r = management.add_stock(conn, pid, qty, user, args.name, args.reason)
+        icon = "➕"
+    elif action == "remove":
+        r = management.remove_stock(conn, pid, qty, user, args.name,
+                                    args.reason)
+        icon = "➖"
+        if r["partial"]:
+            print(f"   ⚠️  only {r['delta']} of {r['requested_delta']} available — "
+                  f"partial removal.")
+    else:
+        r = management.set_stock(conn, pid, qty, user, args.name,
+                                 args.reason)
+        icon = "✏️"
+    print(f"{icon} product #{r['product_id']} {r['change_type']} "
+          f"{r['delta']:+d} → stock {r['qty_before']} → {r['qty_after']}"
+          f" (user: {r['user_email']})")
+
+
+def _inventory_ledger(conn, args) -> None:
+    """ledger [--product <pid>] [--limit N] — show the audit trail."""
+    pid = None
+    a = list(args.args)
+    i = 0
+    while i < len(a):
+        if a[i] == "--product" and i + 1 < len(a):
+            pid = int(a[i + 1]); i += 2
+        else:
+            i += 1
+    from src.inventory import management
+    rows = management.get_ledger(conn, product_id=pid, limit=args.limit)
+    if not rows:
+        print("✅ No stock movements recorded yet.")
+        return
+    label = f"product #{pid}" if pid is not None else "all products"
+    print(f"📒 Stock ledger — {label} (last {len(rows)}):\n")
+    print(f"{'when':<17} {'who':<26} {'type':<14} {'delta':>6} "
+          f"{'before':>7} {'after':>7}  reason / ref")
+    print("-" * 90)
+    for r in rows:
+        ref = f"{r['reference_type']}#{r['reference_id']}" if r['reference_id'] else "—"
+        reason = (r['reason'] or ref)[:40]
+        print(f"{r['created_at']:<17} {r['user_email']:<26} "
+              f"{r['change_type']:<14} {r['delta']:>+6} "
+              f"{r['qty_before']:>7} {r['qty_after']:>7}  {reason}")
+    s = management.ledger_summary(conn)
+    print("-" * 90)
+    print(f"summary: added {s['total_added']} · removed {s['total_removed']} · "
+          f"order deductions {s['orders_deducted']} · users {s['distinct_users']} "
+          f"· net {s['net_movement']:+d}")
+
+
+def _inventory_scan(conn, args) -> None:
+    """scan <file> [--confirm] [--user] [--name] — scan a receipt image/PDF,
+    match lines to stock, and optionally confirm & deduct."""
+    if not args.args:
+        print("Usage: python main.py inventory scan <image|pdf>"
+              f"\n              [--confirm] [--user <email>] [--name <name>]")
+        return
+    from src.ocr import scanner
+    try:
+        result = scanner.scan_file(args.args[0], conn=conn)
+    except scanner.ScanError as e:
+        print(f"❌ {e}")
+        return
+    s = result["summary"]
+    print(f"🧾 Scan: {result['file']}\n")
+    print(f"   lines {s['lines']} · matched {s['matched']} · "
+          f"{s['review']} review · {s['unmatched']} unmatched")
+    print(f"   in stock {s['in_stock']} · partial {s['partial']} · "
+          f"{s['unavailable']} unavailable\n")
+    print(f"{'raw text':<34} {'qty':>5}  {'match':<30} {'by':<9} {'stock':>6} "
+          f"{'avail':>6}  status")
+    print("-" * 100)
+    for it in result["items"]:
+        icon = {"MATCHED": "✅", "REVIEW": "🔍", "UNMATCHED": "❌"}.get(it["status"], "•")
+        match_by = it["match_by"] or "—"
+        print(f"{it['raw_text'][:32]:<34} {it['qty']:>5.0f} "
+              f"{(it['matched_name'] or '—')[:28]:<30} {match_by:<9} "
+              f"{it['stock_on_hand']:>6} {it['available_qty']:>6.0f} "
+              f"{icon} {it['classification']}")
+    if not args.confirm:
+        print("\n   (dry-run) Re-run with --confirm to deduct available stock from the DB.")
+        return
+    user = args.user or "store-admin@local"
+    try:
+        out = scanner.confirm_scanned_order(
+            conn, result["items"], user, args.name)
+    except Exception as e:  # noqa: BLE001
+        print(f"❌ Confirm failed: {e}")
+        return
+    print(f"\n   ✅ Confirmed order #{out['order_id']} — "
+          f"{out['lines_deducted']} line(s) stock deducted, "
+          f"total ₹{out['total_value']:,.2f}")
+    print(f"   user: {out['user_email']} ({out['user_name']}) — "
+          f"ledger entries written (change_type ORDER_DEDUCT, reference scan).")
 
 
 def cmd_price(args):
@@ -826,9 +951,17 @@ def main():
     p_ord.add_argument("args", nargs="*",
                        help="action args: slip path / order id / line+product")
     p_inv = sub.add_parser("inventory", help="Inventory optimisation (EOQ/ROP)")
-    p_inv.add_argument("action", choices=["plan", "reorder", "alerts", "po"],
+    p_inv.add_argument("action", choices=["plan", "reorder", "alerts", "po",
+                                          "add", "remove", "set", "ledger", "scan"],
                        help="Inventory action")
-    p_inv.add_argument("args", nargs="*", help="action args (plan: top N)")
+    p_inv.add_argument("args", nargs="*",
+                       help="action args (plan: top N / add|remove|set: pid qty / scan: file)")
+    p_inv.add_argument("--user", default=None, help="user email (audit ledger)")
+    p_inv.add_argument("--name", default=None, help="user display name")
+    p_inv.add_argument("--reason", default=None, help="reason for the stock movement")
+    p_inv.add_argument("--confirm", action="store_true",
+                       help="scan + confirm & deduct stock (scan action only)")
+    p_inv.add_argument("--limit", type=int, default=50, help="ledger rows to show")
     p_price = sub.add_parser("price", help="Dual-regime pricing engine")
     p_price.add_argument("action", choices=["all", "show"],
                          help="Pricing action")
