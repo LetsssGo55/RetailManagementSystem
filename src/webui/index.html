@@ -921,7 +921,7 @@ async function loadStockControl(){
   try{
     const seg = await J("/api/product-segments");
     $("sc-product").innerHTML = seg.map(p=>
-      `<option value="${p.product_id}">${esc(p.name)} (stock ${p.stock_on_hand??\"—\"})</option>`).join("");
+      `<option value="${p.product_id}">${esc(p.name)} (stock ${p.stock_on_hand ?? "—"})</option>`).join("");
   }catch(e){/* picker optional */}
 }
 async function scAdjust(){
@@ -942,7 +942,7 @@ async function scAdjust(){
       headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const d = await r.json();
     if(!r.ok){$("sc-msg").textContent=d.error||"adjust failed";return;}
-    $("sc-msg").textContent=`✅ ${d.change_type} ${d.delta:+d} → stock ${d.qty_after} (user ${d.user_email})`;
+    $("sc-msg").textContent=`✅ ${d.change_type} ${d.delta >= 0 ? "+" : ""}${d.delta} → stock ${d.qty_after} (user ${d.user_email})`;
     $("sc-qty").value="";
     loadStockControl();loadAll();
   }catch(e){$("sc-msg").textContent="Adjust failed: "+e;}
