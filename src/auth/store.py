@@ -75,7 +75,6 @@ def ensure_table(conn: sqlite3.Connection | None = None) -> None:
 
 
 def get_user(conn, email: str):
-    ensure_table(conn)   # guarantee the table exists before querying
     return conn.execute("SELECT * FROM app_users WHERE lower(email) = ?",
                         (email.lower(),)).fetchone()
 

@@ -12,7 +12,7 @@ from contextlib import contextmanager
 import pandas as pd
 import streamlit as st
 
-from ..config import DB_PATH, ensure_data_dir
+from ..config import DB_PATH
 
 
 @st.cache_resource
@@ -29,7 +29,6 @@ def conn():
     the transaction, it does NOT close the socket/file handle, leaking one
     handle per dashboard query.)
     """
-    ensure_data_dir()
     c = sqlite3.connect(str(DB_PATH))
     c.row_factory = sqlite3.Row
     try:
