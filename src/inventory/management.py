@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 
-def ensure_schema(conn: sqlite3.Connection) -> None:
+def ensure_schema(conn: sqlite3.Connection, *, backfill_opening: bool = True) -> None:
     """Upgrade an existing SQLite file without committing caller transactions."""
     # Do not use sqlite3.Connection.executescript here: it implicitly commits
     # an open transaction and would break the savepoint around stock updates.
@@ -61,6 +61,25 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE inventory_movements ADD COLUMN customer_name TEXT"
         )
+    if backfill_opening:
+        # Capture the live balance once for products that pre-date this ledger.
+        # Products that already have movement history are never backfilled again.
+        conn.execute(
+            """INSERT INTO inventory_movements
+               (product_id, movement_type, quantity, change_qty,
+                stock_before, stock_after, reference_type, note,
+                actor_email, actor_name)
+               SELECT i.product_id, 'OPENING_BALANCE', i.stock_on_hand,
+                      i.stock_on_hand, 0, i.stock_on_hand, 'MIGRATION',
+                      'Opening balance imported when stock audit was enabled',
+                      'system', 'System opening-balance import'
+               FROM inventory_current i
+               WHERE i.stock_on_hand > 0
+                 AND NOT EXISTS (
+                     SELECT 1 FROM inventory_movements m
+                     WHERE m.product_id = i.product_id
+                 )"""
+        )
 
 @contextmanager
 def _atomic(conn: sqlite3.Connection):
@@ -98,7 +117,7 @@ def record_stock_movement(
     customer_name: str | None = None,
 ) -> int:
     """Insert one ledger row inside the caller's transaction; does not commit."""
-    ensure_schema(conn)
+    ensure_schema(conn, backfill_opening=False)
     change = float(change_qty)
     before, after = float(stock_before), float(stock_after)
     if not math.isfinite(change) or change == 0:

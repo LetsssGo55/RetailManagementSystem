@@ -29,8 +29,10 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
         }
         for row in conn.execute(
             """SELECT p.product_id, p.name, p.sku, p.category, p.unit,
-                      COALESCE(i.stock_on_hand, 0) AS stock_on_hand
+                      COALESCE(i.stock_on_hand, 0) AS stock_on_hand,
+                      COALESCE(k.tier, 'UNASSIGNED') AS tier, k.cluster
                FROM products p LEFT JOIN inventory_current i USING(product_id)
+               LEFT JOIN ml_cluster_assignment k USING(product_id)
                WHERE p.is_active = 1"""
         )
     }
@@ -144,6 +146,8 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
                     "product": info["name"],
                     "sku": info["sku"],
                     "category": info["category"],
+                    "tier": info["tier"],
+                    "cluster": info["cluster"],
                     "unit": info["unit"],
                     "stock_at_wave_start": info["stock"],
                     "requested_qty": 0.0,
@@ -240,20 +244,23 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
                 if len(added) >= 5:
                     break
 
-    grouped: dict[str, list[dict]] = defaultdict(list)
+    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for item in product_wave.values():
         item["requested_qty"] = round(item["requested_qty"], 3)
         item["pick_qty"] = round(item["pick_qty"], 3)
         item["short_qty"] = round(item["short_qty"], 3)
         item["remaining_after_wave"] = round(item["remaining_after_wave"], 3)
-        grouped[item["category"]].append(item)
+        grouped[(item["category"], item["tier"])].append(item)
 
     category_groups = [
         {
             "category": category,
+            "tier": tier,
             "products": sorted(items, key=lambda item: item["product"].casefold()),
         }
-        for category, items in sorted(grouped.items(), key=lambda pair: pair[0].casefold())
+        for (category, tier), items in sorted(
+            grouped.items(), key=lambda pair: (pair[0][0].casefold(), pair[0][1])
+        )
     ]
     return {
         "priority_rule": "Fully ready orders first, then live standalone fulfilment percentage, then FIFO. Stock is allocated once across the entire wave.",

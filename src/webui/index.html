@@ -714,7 +714,7 @@ function renderPickingWave(wave){
   wave=wave||{};
   const orders=wave.priority_orders||[];
   const baskets=(wave.category_groups||[]).flatMap(group=>
-    group.products.map(p=>({...p,category:group.category})));
+    group.products.map(p=>({...p,category:group.category,group_tier:group.tier})));
   const suggestions=wave.suggestions||[];
   $("#wave-count").textContent=(wave.open_orders||0)+" open orders";
   $("#wave-rule").textContent=wave.priority_rule||"No open orders.";
@@ -734,8 +734,8 @@ function renderPickingWave(wave){
       fmt(o.planned_fulfilment_pct)+"%",fmt(o.requested_units),fmt(o.allocated_units),
       fmt(o.short_units),stBadge(o.dispatch)]));
   table($("#wave-baskets-table"),
-    ["Category","Product","Total requested","Pick from stock","Short","Stock at start","Remaining","Buyer-wise picks"],
-    baskets.map(p=>[esc(p.category),esc(p.product)+" · "+esc(p.sku),
+    ["Category / tier","Product","Total requested","Pick from stock","Short","Stock at start","Remaining","Buyer-wise picks"],
+    baskets.map(p=>[esc(p.category)+" · "+esc(p.group_tier||p.tier||"UNASSIGNED"),esc(p.product)+" · "+esc(p.sku),
       fmt(p.requested_qty)+" "+esc(p.unit),fmt(p.pick_qty)+" "+esc(p.unit),
       fmt(p.short_qty)+" "+esc(p.unit),fmt(p.stock_at_wave_start),
       fmt(p.remaining_after_wave),

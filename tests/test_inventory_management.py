@@ -39,12 +39,14 @@ def test_manual_add_and_remove_are_logged_with_actor(conn):
     assert removed["stock_after"] == 13
 
     rows = management.movement_history(conn)
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert rows[0]["movement_type"] == "MANUAL_REMOVE"
     assert rows[0]["change_qty"] == -4
     assert rows[0]["actor_email"] == "manager@example.com"
     assert rows[1]["movement_type"] == "MANUAL_ADD"
     assert rows[1]["change_qty"] == 5
+    assert rows[2]["movement_type"] == "OPENING_BALANCE"
+    assert rows[2]["stock_after"] == 12
 
 
 def test_remove_cannot_make_stock_negative(conn):
@@ -53,7 +55,7 @@ def test_remove_cannot_make_stock_negative(conn):
     assert conn.execute(
         "SELECT stock_on_hand FROM inventory_current WHERE product_id = 1"
     ).fetchone()[0] == 12
-    assert conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM inventory_movements").fetchone()[0] == 1
 
 
 def test_create_product_registers_stock_and_barcode(conn):
@@ -137,3 +139,21 @@ def test_barcode_order_deducts_stock_once_and_logs_confirming_user(conn):
     assert float(order_row["change_qty"]) == -2
     assert float(order_row["remaining_stock"]) == 10
 
+
+
+
+def test_existing_stock_is_imported_to_audit_ledger_once(conn):
+    management.ensure_schema(conn)
+    management.ensure_schema(conn)
+    row = conn.execute(
+        """SELECT movement_type, quantity, stock_before, stock_after,
+                  reference_type, actor_name
+           FROM inventory_movements WHERE product_id = 1"""
+    ).fetchone()
+    assert tuple(row) == (
+        "OPENING_BALANCE", 12, 0, 12, "MIGRATION",
+        "System opening-balance import",
+    )
+    assert conn.execute(
+        "SELECT COUNT(*) FROM inventory_movements WHERE product_id = 1"
+    ).fetchone()[0] == 1

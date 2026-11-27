@@ -360,6 +360,8 @@ def cmd_order(args):
 
 def _order_demo(conn):
     """Full Phase-2→3 showcase: OCR slips → draft → resolve → confirm → fulfil."""
+    from src.inventory import management as inventory_management
+    inventory_management.ensure_schema(conn)
     from src.ocr import engine, pipeline
     from src.ocr.slip_generator import SLIP_DIR, generate_all
     from src.orders import availability, fulfilment, intake, queue
@@ -409,6 +411,8 @@ def _order_demo(conn):
                      (r["order_id"],))
     conn.commit()
     if old:
+        from src.inventory import management as inventory_management
+        inventory_management.sync_audit_file(conn)
         print(f"🧹 Cleared {len(old)} previous demo order(s) "
               "(restored shipped stock).\n")
 
