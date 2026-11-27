@@ -97,10 +97,14 @@ def api_orders():
     from src.orders import queue as oq
     def f(c):
         rows = c.execute(
-            "SELECT o.order_id, COALESCE(cu.name,'Walk-in') customer, "
-            "o.total_value, o.fulfilment_pct, o.status FROM customer_orders o "
-            "LEFT JOIN customers cu USING(customer_id) "
-            "ORDER BY o.order_id DESC LIMIT 12").fetchall()
+            """SELECT o.order_id, o.customer_id,
+                      COALESCE(cu.name,'Walk-in') customer,
+                      cu.phone AS customer_phone, o.order_date, o.created_at,
+                      o.total_value, o.fulfilment_pct, o.status
+               FROM customer_orders o
+               LEFT JOIN customers cu USING(customer_id)
+               ORDER BY o.order_id DESC LIMIT 30"""
+        ).fetchall()
         return {"recent": [dict(r) for r in rows],
                 "queue": [{"rank": e.rank, "order": e.order_id,
                            "fulfilment": e.fulfilment_pct,
@@ -137,6 +141,21 @@ def api_inventory_movements(limit: int = 100):
     def f(c):
         return management.movement_history(c, limit=limit)
     return q(f)
+
+
+def api_buyers():
+    """Return all active customer records for receipt-to-buyer assignment."""
+    def f(c):
+        return [dict(row) for row in c.execute(
+            """SELECT customer_id, name, phone, segment
+               FROM customers ORDER BY name COLLATE NOCASE, customer_id"""
+        )]
+    return q(f)
+
+
+def api_picking_wave():
+    from src.orders.picking import build_picking_wave
+    return q(build_picking_wave)
 
 
 def api_customers():
@@ -399,6 +418,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_inventory())
             if path == "/api/inventory/movements":
                 return self._json(api_inventory_movements())
+            if path == "/api/inventory/movements.csv":
+                return self._inventory_log_csv()
+            if path == "/api/buyers":
+                return self._json(api_buyers())
+            if path == "/api/picking-wave":
+                return self._json(api_picking_wave())
             if path == "/api/customers":
                 return self._json(api_customers())
             if path == "/api/models":
@@ -445,6 +470,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True})
             if path.startswith("/api/order/") and path.endswith("/preview"):
                 return self._preview_order(int(path.split("/")[-2]))
+            if path == "/api/buyers/create":
+                return self._create_buyer()
             if path == "/api/inventory/product":
                 return self._create_inventory_product()
             if path == "/api/inventory/adjust":
@@ -530,6 +557,33 @@ class Handler(BaseHTTPRequestHandler):
         return {"email": user.get("email", "system"),
                 "name": user.get("name", user.get("email", "System"))}
 
+    def _create_buyer(self):
+        data = json.loads(self._body() or b"{}")
+        name = str(data.get("name") or "").strip()
+        phone = str(data.get("phone") or "").strip()
+        if not name or len(name) > 120:
+            raise ValueError("Buyer name is required and must be at most 120 characters.")
+        if len(phone) > 32:
+            raise ValueError("Buyer phone number must be at most 32 characters.")
+        def f(c):
+            cur = c.execute(
+                "INSERT INTO customers (name, phone, segment) VALUES (?, ?, 'NEW')",
+                (name, phone or None),
+            )
+            c.commit()
+            return {"customer_id": int(cur.lastrowid), "name": name, "phone": phone}
+        return self._json(q(f), 201)
+
+    def _inventory_log_csv(self):
+        from src.inventory import management
+        def f(c):
+            return management.sync_audit_file(c)
+        path = q(f)
+        if not path or not Path(path).exists():
+            return self._json({"error": "No inventory movement log exists yet."}, 404)
+        self._send(200, Path(path).read_bytes(), "text/csv; charset=utf-8")
+
+
     def _preview_order(self, oid: int):
         from src.orders import availability
         def f(c):
@@ -583,7 +637,11 @@ class Handler(BaseHTTPRequestHandler):
         from src.orders import intake, availability
         data = json.loads(self._body() or b"{}")
         def f(c):
-            oid = intake.create_order_from_barcodes(c, data.get("items", []), source="BARCODE")
+            oid = intake.create_order_from_barcodes(
+                c, data.get("items", []),
+                customer_id=int(data["customer_id"]) if data.get("customer_id") else None,
+                source="BARCODE",
+            )
             summary = availability.check_order(c, oid)
             lines = [dict(r) for r in c.execute(
                 """SELECT l.line_id, l.raw_text, l.ordered_qty, l.available_qty,
@@ -599,7 +657,15 @@ class Handler(BaseHTTPRequestHandler):
     def _fulfil(self, oid: int):
         from src.orders import fulfilment
         from src.orders.models import OrderStatus
+        from src.orders.picking import build_picking_wave
         def f(c):
+            wave = build_picking_wave(c)
+            if wave["priority_orders"]:
+                first_order = int(wave["priority_orders"][0]["order_id"])
+                if int(oid) != first_order:
+                    raise ValueError(
+                        f"Picking priority is order #{first_order}; fulfil it before order #{oid}."
+                    )
             order = c.execute(
                 "SELECT status FROM customer_orders WHERE order_id = ?", (oid,)
             ).fetchone()
@@ -642,10 +708,21 @@ class Handler(BaseHTTPRequestHandler):
             }, 501)
         raw = self._body()
         filename = self.headers.get("X-Filename", "receipt-upload")
+        customer_header = self.headers.get("X-Customer-ID", "")
+        try:
+            customer_id = int(customer_header) if customer_header else None
+        except (TypeError, ValueError):
+            return self._json({"error": "Invalid buyer selection."}, 400)
         def f(c):
             slip = receipt.process_receipt(raw, filename, conn=c)
             from src.orders import intake, availability
-            oid = intake.create_order_from_slip(c, slip, source="RECEIPT-OCR")
+            if customer_id is not None and not c.execute(
+                "SELECT 1 FROM customers WHERE customer_id = ?", (customer_id,)
+            ).fetchone():
+                raise ValueError("Selected buyer was not found.")
+            oid = intake.create_order_from_slip(
+                c, slip, customer_id=customer_id, source="RECEIPT-OCR"
+            )
             summary = availability.check_order(c, oid)
             lines = [dict(r) for r in c.execute(
                 """SELECT l.line_id, l.raw_text, l.ordered_qty, l.available_qty,
