@@ -112,3 +112,26 @@ def test_wave_does_not_mutate_inventory_or_order_state(conn):
     ).fetchall()
     assert [tuple(r) for r in before] == [tuple(r) for r in after]
     assert [tuple(r) for r in states] == [tuple(r) for r in states_after]
+
+
+
+def test_cross_sell_does_not_recommend_stock_reserved_by_later_buyer(conn):
+    conn.execute(
+        """INSERT INTO customer_orders
+           (order_id, customer_id, order_date, source, fulfilment_pct, status, total_value)
+           VALUES (103, 2, '2026-11-29', 'RECEIPT-OCR', 0, 'DRAFT', 100)"""
+    )
+    conn.execute(
+        """INSERT INTO order_line_items
+           (order_id, product_id, raw_text, ordered_qty, status)
+           VALUES (103, 3, 'Digestive Biscuits 3 packs', 3, 'MATCHED')"""
+    )
+    conn.commit()
+
+    wave = build_picking_wave(conn)
+    # Biscuits are fully allocated to an existing order, so no buyer is offered
+    # the same units as an additional cross-sell.
+    assert all(
+        rec["suggested_product_id"] != 3
+        for rec in wave["suggestions"]
+    )

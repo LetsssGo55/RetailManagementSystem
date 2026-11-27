@@ -204,45 +204,50 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
             "allocations": allocation_details,
         })
 
-        if ordered_ids:
-            marks = ",".join("?" for _ in ordered_ids)
-            rec_rows = conn.execute(
-                f"""SELECT r.antecedent_id, a.name AS based_on,
-                           r.consequent_id, p.name AS suggested_product,
-                           r.support, r.confidence, r.lift, r.action,
-                           COALESCE(i.stock_on_hand, 0) AS current_stock
-                    FROM bundle_recommendations r
-                    JOIN products a ON a.product_id = r.antecedent_id
-                    JOIN products p ON p.product_id = r.consequent_id
-                    LEFT JOIN inventory_current i ON i.product_id = p.product_id
-                    WHERE r.antecedent_id IN ({marks})
-                      AND r.consequent_id NOT IN ({marks})
-                      AND p.is_active = 1
-                    ORDER BY r.confidence DESC, r.lift DESC, r.weekly_impact DESC""",
-                (*ordered_ids, *ordered_ids),
-            ).fetchall()
-            added = set()
-            for rec in rec_rows:
-                rid = int(rec["consequent_id"])
-                after_wave = remaining.get(rid, float(rec["current_stock"] or 0))
-                if rid in added or after_wave <= 0:
-                    continue
-                added.add(rid)
-                suggestions.append({
-                    "order_id": order["order_id"],
-                    "customer_id": order["customer_id"],
-                    "buyer": order["buyer_name"],
-                    "based_on": rec["based_on"],
-                    "suggested_product_id": rid,
-                    "suggested_product": rec["suggested_product"],
-                    "support": float(rec["support"] or 0),
-                    "confidence": float(rec["confidence"] or 0),
-                    "lift": float(rec["lift"] or 0),
-                    "action": rec["action"],
-                    "stock_after_wave": after_wave,
-                })
-                if len(added) >= 5:
-                    break
+
+
+    # Cross-sell stock is evaluated after every existing buyer allocation,
+    # so suggestions never promise units already reserved for a later order.
+    for order in order_work:
+        ordered_ids = sorted(order["demand_by_product"])
+        if not ordered_ids:
+            continue
+        marks = ",".join("?" for _ in ordered_ids)
+        rec_rows = conn.execute(
+            f"""SELECT r.antecedent_id, a.name AS based_on,
+                       r.consequent_id, p.name AS suggested_product,
+                       r.support, r.confidence, r.lift, r.action
+                FROM bundle_recommendations r
+                JOIN products a ON a.product_id = r.antecedent_id
+                JOIN products p ON p.product_id = r.consequent_id
+                WHERE r.antecedent_id IN ({marks})
+                  AND r.consequent_id NOT IN ({marks})
+                  AND p.is_active = 1
+                ORDER BY r.confidence DESC, r.lift DESC, r.weekly_impact DESC""",
+            (*ordered_ids, *ordered_ids),
+        ).fetchall()
+        added = set()
+        for rec in rec_rows:
+            rid = int(rec["consequent_id"])
+            after_wave = remaining.get(rid, 0.0)
+            if rid in added or after_wave <= 0:
+                continue
+            added.add(rid)
+            suggestions.append({
+                "order_id": order["order_id"],
+                "customer_id": order["customer_id"],
+                "buyer": order["buyer_name"],
+                "based_on": rec["based_on"],
+                "suggested_product_id": rid,
+                "suggested_product": rec["suggested_product"],
+                "support": float(rec["support"] or 0),
+                "confidence": float(rec["confidence"] or 0),
+                "lift": float(rec["lift"] or 0),
+                "action": rec["action"],
+                "stock_after_wave": after_wave,
+            })
+            if len(added) >= 5:
+                break
 
     grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for item in product_wave.values():
