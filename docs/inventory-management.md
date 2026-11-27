@@ -72,6 +72,12 @@ association rules in `bundle_recommendations`. Suggestions are advisory and
 are not silently added to a buyer's order. They are hidden when there is no
 stock left after planned picking.
 
+To refresh these associations after new sales / receipt orders have accumulated,
+run `python main.py train`. The training command persists the new rules for
+the picking-wave suggestion panel. If there are no saved association rules,
+the suggestion table remains empty rather than inventing product pairs.
+
+
 ## Buyer-aware stock audit file
 
 The SQLite `inventory_movements` table remains the authoritative ledger.
