@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import secrets
 import sys
-import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -627,13 +626,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _ocr(self):
         from src.ocr import engine as oe, receipt
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            return self._json({"error": "Invalid upload length."}, 400)
+        if content_length <= 0:
+            return self._json({"error": "Upload a non-empty receipt file."}, 400)
+        if content_length > receipt.MAX_UPLOAD_BYTES:
+            return self._json({"error": "Receipt exceeds the 15 MB upload limit."}, 413)
         if not oe.tesseract_available():
             return self._json({
                 "error": "Tesseract OCR is not installed. Install Tesseract OCR and restart the server."
             }, 501)
         raw = self._body()
-        if len(raw) > receipt.MAX_UPLOAD_BYTES:
-            return self._json({"error": "Receipt exceeds the 15 MB upload limit."}, 413)
         filename = self.headers.get("X-Filename", "receipt-upload")
         def f(c):
             slip = receipt.process_receipt(raw, filename, conn=c)

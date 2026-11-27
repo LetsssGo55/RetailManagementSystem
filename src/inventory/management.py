@@ -2,8 +2,8 @@
 ArthaMart — Operational inventory management and immutable stock ledger.
 
 All manual stock writes are atomic and create an attributable movement record.
-Product catalogue entries are deactivated rather than hard-deleted so historic
-orders and inventory movements keep referential integrity.
+Product catalogue rows are retained so historic orders and inventory movements
+keep referential integrity.
 """
 from __future__ import annotations
 
@@ -224,6 +224,8 @@ def create_product(
         raise ValueError("Barcode must be at most 128 characters without spaces.")
 
     with _atomic(conn):
+        if conn.execute("SELECT 1 FROM products WHERE sku = ?", (sku,)).fetchone():
+            raise ValueError(f"SKU {sku!r} already exists.")
         if barcode and conn.execute(
             "SELECT 1 FROM product_barcodes WHERE barcode = ?", (barcode,)
         ).fetchone():
@@ -272,7 +274,7 @@ def lookup_barcode(conn: sqlite3.Connection, barcode: str) -> dict | None:
            WHERE p.is_active = 1 AND (b.barcode = ? OR p.sku = ?)
            ORDER BY CASE WHEN b.barcode = ? THEN 0 ELSE 1 END
            LIMIT 1""",
-        (code, code, code),
+        (code, code.upper(), code),
     ).fetchone()
     return dict(row) if row else None
 

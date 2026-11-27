@@ -67,6 +67,7 @@ def test_create_product_registers_stock_and_barcode(conn):
     assert found and found["product_id"] == pid
     assert found["stock"] == 9
     assert management.lookup_barcode(conn, "SKU-NEW")["product_id"] == pid
+    assert management.lookup_barcode(conn, "sku-new")["product_id"] == pid
     movement = conn.execute(
         "SELECT movement_type, change_qty, actor_email FROM inventory_movements WHERE product_id = ?",
         (pid,),
