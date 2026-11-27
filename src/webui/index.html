@@ -197,6 +197,11 @@ tbody tr:hover{background:hsl(var(--muted))}
 .chip{border:1px solid hsl(var(--border));border-radius:9999px;
   padding:.25rem .7rem;font-size:12px;color:hsl(var(--muted-foreground))}
 .chip:hover{background:hsl(var(--accent));color:hsl(var(--accent-foreground))}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;align-items:end}
+.form-grid .field{min-width:0}
+.form-grid input,.form-grid select{width:100%;border:1px solid hsl(var(--input));border-radius:var(--radius);background:transparent;color:hsl(var(--foreground));padding:.48rem .6rem;font:inherit}
+.form-grid button{justify-self:start}
+@media(max-width:700px){.form-grid{grid-template-columns:1fr}}
 select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
   background:hsl(var(--card));color:hsl(var(--foreground));
   padding:.35rem .5rem;font:inherit}
@@ -346,14 +351,14 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
       <!-- OCR -->
       <section class="view" id="view-ocr">
         <div class="page-head"><div><h1>OCR Intake</h1>
-          <p>Upload a slip — real Tesseract + fuzzy matching pipeline.</p></div></div>
+          <p>Upload a customer receipt / order slip (image or PDF). Review matched stock before confirming fulfilment.</p></div></div>
         <div class="grid cols-2">
           <div class="card"><div class="card-h"><h3>Upload slip</h3></div>
             <div class="card-b"><div class="empty" id="drop"
               style="border:1.5px dashed hsl(var(--border));border-radius:var(--radius);cursor:pointer">
-              ⬆ Click / drop a slip image<br>
-              <span class="muted">try ArthaMart/assets/sample_slips/*.png</span></div>
-              <input type="file" id="slip-file" accept="image/*" hidden></div></div>
+              ⬆ Click / drop an image or PDF receipt<br>
+              <span class="muted">PDF, PNG, JPG · max 15 MB · up to 8 PDF pages</span></div>
+              <input type="file" id="slip-file" accept="image/*,.pdf,application/pdf" hidden></div></div>
           <div class="card"><div class="card-h"><h3>Extracted lines</h3>
             <span class="badge" id="ocr-badge">—</span></div>
             <div class="card-b" style="padding-top:0"><table id="ocr-table"></table></div></div>
@@ -362,11 +367,54 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
 
       <!-- INVENTORY -->
       <section class="view" id="view-inventory">
-        <div class="page-head"><div><h1>Inventory</h1>
-          <p>Live EOQ / ROP plan (top priority).</p></div>
-          <button class="btn outline" onclick="exportCSV('inventory')">CSV</button></div>
-        <div class="card"><div class="card-b" style="padding-top:0">
-          <table id="inv-table"></table></div></div>
+        <div class="page-head"><div><h1>Inventory management</h1>
+          <p>Manage catalogue items, stock balances and the stock-movement audit ledger.</p></div>
+          <button class="btn outline" onclick="exportCSV('inventory')">Export stock CSV</button></div>
+        <div class="grid cols-2">
+          <div class="card"><div class="card-h"><h3>Add catalogue item</h3></div>
+            <div class="card-b">
+              <form id="product-form" class="form-grid">
+                <div class="field"><label>SKU</label><input name="sku" required maxlength="80" placeholder="SKU-NEW-001"></div>
+                <div class="field"><label>Product name</label><input name="name" required maxlength="160" placeholder="Product name"></div>
+                <div class="field"><label>Category</label><input name="category" required maxlength="80" placeholder="Grocery"></div>
+                <div class="field"><label>Unit</label><input name="unit" value="pcs" required></div>
+                <div class="field"><label>Pricing regime</label><select name="regime" class="sel"><option value="MRP">MRP</option><option value="BULK">BULK</option></select></div>
+                <div class="field"><label>MRP (required for MRP)</label><input name="mrp" type="number" min="0.01" step="0.01"></div>
+                <div class="field"><label>Wholesale cost</label><input name="wholesale_cost" type="number" min="0.01" step="0.01" required></div>
+                <div class="field"><label>Base margin %</label><input name="base_margin_pct" type="number" min="0" max="200" step="0.1" value="18"></div>
+                <div class="field"><label>Opening stock</label><input name="opening_stock" type="number" min="0" step="1" value="0"></div>
+                <div class="field"><label>Reorder level</label><input name="reorder_level" type="number" min="0" step="1" value="0"></div>
+                <div class="field"><label>Barcode (optional)</label><input name="barcode" autocomplete="off" placeholder="Scan or enter barcode"></div>
+                <div class="field"><label>Shelf life days (optional)</label><input name="shelf_life_days" type="number" min="1" step="1"></div>
+                <button class="btn" type="submit">Create product</button><span class="muted" id="product-msg" role="status"></span>
+              </form>
+            </div>
+          </div>
+          <div class="card"><div class="card-h"><h3>Manual stock adjustment</h3></div>
+            <div class="card-b">
+              <form id="adjust-form" class="form-grid">
+                <div class="field"><label>Product</label><select name="product_id" id="adjust-product" class="sel" required></select></div>
+                <div class="field"><label>Action</label><select name="action" class="sel"><option value="add">Add stock</option><option value="remove">Remove stock</option></select></div>
+                <div class="field"><label>Quantity (whole units)</label><input name="quantity" type="number" min="1" step="1" required></div>
+                <div class="field"><label>Reason / note</label><input name="note" maxlength="500" placeholder="Supplier delivery, damage, correction…"></div>
+                <button class="btn" type="submit">Save stock movement</button><span class="muted" id="adjust-msg" role="status"></span>
+              </form>
+              <div style="margin:1rem 0;border-top:1px solid hsl(var(--border))"></div>
+              <h3 style="font-size:14px;margin-bottom:.6rem">Barcode order scanner</h3>
+              <p class="muted" style="margin-bottom:.6rem">Use a USB/Bluetooth scanner in keyboard-wedge mode or type a barcode/SKU. Scan each item, then create a draft order.</p>
+              <div class="field"><label>Scan barcode / SKU</label><input id="barcode-input" autocomplete="off" placeholder="Scan item barcode and press Enter"></div>
+              <div id="barcode-found" class="muted" style="margin:.45rem 0"></div>
+              <div id="barcode-cart" style="overflow-x:auto"></div>
+              <button class="btn" id="barcode-order" type="button" disabled style="margin-top:.6rem">Create scanned order</button>
+              <span class="muted" id="barcode-msg" role="status"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card"><div class="card-h"><h3>Current stock</h3><span class="muted">All active products</span></div>
+          <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="inv-table"></table></div></div>
+        <div class="card"><div class="card-h"><h3>Stock movement audit log</h3>
+          <span class="muted">Opening balances, manual changes and fulfilled orders</span></div>
+          <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="movement-table"></table></div></div>
       </section>
 
       <!-- MODELS -->
@@ -619,11 +667,94 @@ function renderBasketProducts(products){
   else{$("#basket-product-summary").innerHTML="";$("#basket-product-note").textContent="No products are available in the catalogue.";}
 }
 
+/* ---------------- operational inventory management ---------------- */
+let barcodeCart=[];
+function renderInventoryControls(rows,movements){
+  const productSelect=$("#adjust-product");
+  const previous=productSelect.value;
+  productSelect.innerHTML=rows.map(p=>'<option value="'+p.product_id+'">#'+p.product_id+
+    ' · '+esc(p.name)+' (stock '+fmt(p.stock)+')</option>').join("");
+  if(rows.some(p=>String(p.product_id)===previous))productSelect.value=previous;
+  table($("#inv-table"),["SKU","Product","Category","Barcode","Stock","Reorder","ROP","EOQ","Status"],
+    rows.map(p=>[esc(p.sku),esc(p.name),esc(p.category),esc(p.barcode||"—"),
+      fmt(p.stock),fmt(p.reorder_level),fmt(p.rop),fmt(p.eoq),stBadge(p.status)]));
+  table($("#movement-table"),["When","Product","Movement","Change","Before","After","Reference","User","Note"],
+    movements.map(m=>[esc(m.created_at),esc(m.product),esc(m.movement_type),
+      (Number(m.change_qty)>0?"+":"")+fmt(m.change_qty),fmt(m.stock_before),
+      fmt(m.stock_after),esc(m.reference_type?m.reference_type+" #"+m.reference_id:"—"),
+      esc(m.actor_name)+"<br><span class='muted'>"+esc(m.actor_email)+"</span>",
+      esc(m.note||"—")]));
+}
+function drawBarcodeCart(){
+  table($("#barcode-cart"),["Barcode","Product","Qty","Available",""],barcodeCart.map((x,i)=>[
+    esc(x.barcode),esc(x.name),fmt(x.quantity),fmt(x.stock),
+    '<button type="button" class="btn outline" onclick="removeBarcodeCart('+i+')">Remove</button>'
+  ]));
+  $("#barcode-order").disabled=!barcodeCart.length;
+}
+function removeBarcodeCart(index){barcodeCart.splice(index,1);drawBarcodeCart();}
+async function lookupScannedBarcode(code){
+  const response=await api("/api/barcode/lookup",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({barcode:code})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Barcode lookup failed.");
+  if(!data.product){$("#barcode-found").textContent="No active product matched this barcode/SKU.";return;}
+  const p=data.product;
+  $("#barcode-found").textContent=p.name+" · stock "+fmt(p.stock)+" "+p.unit+" · SKU "+p.sku;
+  const existing=barcodeCart.find(x=>x.barcode===code);
+  if(existing)existing.quantity+=1;
+  else barcodeCart.push({barcode:code,name:p.name,quantity:1,stock:p.stock});
+  drawBarcodeCart();
+}
+$("#barcode-input").addEventListener("keydown",async event=>{
+  if(event.key!=="Enter")return;
+  event.preventDefault();
+  const code=event.currentTarget.value.trim();if(!code)return;
+  try{await lookupScannedBarcode(code);event.currentTarget.value="";}
+  catch(error){$("#barcode-found").textContent=error.message;}
+});
+$("#barcode-order").addEventListener("click",async()=>{
+  if(!barcodeCart.length)return;
+  const response=await api("/api/orders/barcode",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({items:barcodeCart.map(x=>({barcode:x.barcode,quantity:x.quantity}))})});
+  const data=await response.json();
+  if(!response.ok){$("#barcode-msg").textContent=data.error||"Could not create draft order.";return;}
+  $("#barcode-msg").textContent="Draft order #"+data.order_id+
+    " created. Review it in Orders before confirming stock deduction.";
+  barcodeCart=[];drawBarcodeCart();await loadAll();
+});
+$("#product-form").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=Object.fromEntries(new FormData(event.currentTarget).entries());
+  for(const key of ["mrp","shelf_life_days","base_margin_pct","wholesale_cost","opening_stock","reorder_level"])
+    form[key]=form[key]===""?null:Number(form[key]);
+  const response=await api("/api/inventory/product",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+  const data=await response.json();
+  $("#product-msg").textContent=response.ok?"Product #"+data.product_id+" added.":
+    (data.error||"Could not add product.");
+  if(response.ok){event.currentTarget.reset();event.currentTarget.elements.unit.value="pcs";await loadAll();}
+});
+$("#adjust-form").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=Object.fromEntries(new FormData(event.currentTarget).entries());
+  form.product_id=Number(form.product_id);form.quantity=Number(form.quantity);
+  const response=await api("/api/inventory/adjust",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+  const data=await response.json();
+  $("#adjust-msg").textContent=response.ok?
+    data.product+": "+fmt(data.stock_before)+" → "+fmt(data.stock_after):
+    (data.error||"Stock adjustment failed.");
+  if(response.ok){event.currentTarget.elements.quantity.value="";await loadAll();}
+});
+
 /* ---------------- loaders ---------------- */
 async function loadAll(){
-  const [kp,cards,ord,inv,cust,mod,sim,fc,segments,basketProducts]=await Promise.all([
+  const [kp,cards,ord,inv,movements,cust,mod,sim,fc,segments,basketProducts]=await Promise.all([
     J("/api/kpis"),J("/api/cards"),J("/api/orders"),J("/api/inventory"),
-    J("/api/customers"),J("/api/models"),J("/api/simulation"),
+    J("/api/inventory/movements"),J("/api/customers"),J("/api/models"),J("/api/simulation"),
     J("/api/forecast"),J("/api/product-segments"),J("/api/basket-products")]);
   window.D={orders:ord,inv,cust,segments,basketProducts};
   const hh=await J("/api/health");
@@ -663,13 +794,12 @@ async function loadAll(){
   table($("#orders-table"),["Order","Customer","Value","Fulfil","Status",""],
     ord.recent.map(o=>[...orow(o),
       `<button class="btn outline" style="padding:.2rem .6rem"
-        onclick="fulfil(${o.order_id})">Fulfil+Invoice</button>`]));
+        onclick="fulfil(${o.order_id})">Review &amp; confirm</button>`]));
   table($("#queue-table"),["Rank","Order","Fulfilment","Value","Flag"],
     ord.queue.map(e=>[e.rank,"#"+e.order,e.fulfilment+"%",inr(e.value),
       stBadge(e.flag==="HOLD"?"HOLD":e.flag)]));
 
-  table($("#inv-table"),["Product","Stock","ROP","EOQ","Status"],
-    inv.map(r=>[r.product,r.stock,r.rop,r.eoq,stBadge(r.status)]));
+  renderInventoryControls(inv,movements);
 
   $("#model-row").innerHTML=[
     ["RF forecaster","MAPE "+(mod.mape??0).toFixed(1)+"%",
@@ -758,12 +888,24 @@ async function loadFc(pid){
   $("#fc-summary").innerHTML=`<b>${esc(name)}</b> · Historical sales: ${fmt(histUnits)} units over ${histRows.length} days (${fmt(histAvg)} per day) · Next 7-day forecast: <b>${fmt(forecastUnits)} units</b> (${fmt(forecastUnits/7)} per day) · Forecast vs historical daily average: ${delta===null?"not available":(delta>=0?"+":"")+delta.toFixed(1)+"%"} · Product model metrics: RMSE ${fmt(metrics.rmse)}, MAE ${fmt(metrics.mae)}, MAPE ${metrics.mape==null?"—":fmt(metrics.mape)+"%"}.`;
 }
 async function fulfil(id){
-  const r=await api("/api/fulfil/"+id,{method:"POST"});
-  const d=await r.json();
-  if(!r.ok){alert(d.error||"fulfil failed");return;}
-  alert("Fulfilled "+d.fulfilment.lines_shipped+"/"+d.fulfilment.lines_orderable
-    +" lines"+(d.invoice?" — invoice ready":""));
-  loadAll();
+  const previewResponse=await api("/api/order/"+id+"/confirm",{method:"POST"});
+  const preview=await previewResponse.json();
+  if(!previewResponse.ok){alert(preview.error||"Order could not be confirmed.");return;}
+  const summary=preview.summary||{};
+  const details=(preview.lines||[]).map(x=>
+    (x.product||("Line "+x.line_id))+": ordered "+fmt(x.ordered_qty)+
+    ", available "+fmt(x.available_qty)+", "+x.status).join("\\n");
+  const promptText="Order #"+id+" stock review\\n"+
+    "Available fulfilment: "+fmt(summary.fulfilment_pct)+"%\\n\\n"+
+    details+"\\n\\nConfirm and deduct these available quantities?";
+  if(!window.confirm(promptText))return;
+  const response=await api("/api/fulfil/"+id,{method:"POST"});
+  const result=await response.json();
+  if(!response.ok){alert(result.error||"Fulfilment failed.");return;}
+  alert("Order #"+id+" completed. "+result.fulfilment.lines_shipped+
+    "/"+result.fulfilment.lines_orderable+" lines shipped."+
+    (result.invoice?" Invoice is ready.":""));
+  await loadAll();
 }
 async function invoice(id){
   const r=await api("/api/invoice/"+id);
@@ -782,15 +924,20 @@ $("#drop").addEventListener("drop",e=>{e.preventDefault();
   if(e.dataTransfer.files[0])sendSlip(e.dataTransfer.files[0]);});
 async function sendSlip(f){
   $("#ocr-badge").textContent="processing…";
-  const r=await api("/api/ocr",{method:"POST",
-    headers:{"Content-Type":f.type||"image/png"},
+  const response=await api("/api/ocr",{method:"POST",
+    headers:{"Content-Type":f.type||"application/octet-stream",
+      "X-Filename":encodeURIComponent(f.name||"receipt")},
     body:await f.arrayBuffer()});
-  const d=await r.json();
-  if(!r.ok){$("#ocr-badge").textContent="error";alert(d.error);return;}
-  const m=d.filter(x=>x.status==="MATCHED").length;
-  $("#ocr-badge").textContent=m+"/"+d.length+" matched";
-  table($("#ocr-table"),["OCR text","Qty","Match","Score","Status"],
-    d.map(x=>[x.raw,x.qty,x.match??"—",x.score,stBadge(x.status)]));
+  const data=await response.json();
+  if(!response.ok){$("#ocr-badge").textContent="error";alert(data.error);return;}
+  $("#ocr-badge").textContent="Draft order #"+data.order_id+
+    " · "+(data.summary?.matched||0)+" matched";
+  table($("#ocr-table"),["Product / OCR text","Ordered","Available","Stock","Status"],
+    (data.lines||[]).map(x=>[esc(x.product||x.raw_text||"Unmatched"),
+      fmt(x.ordered_qty),fmt(x.available_qty),fmt(x.stock_on_hand),stBadge(x.status)]));
+  alert("Receipt parsed into draft order #"+data.order_id+
+    ". Review stock in Orders, then select Review & confirm to deduct stock.");
+  await loadAll();
 }
 
 /* ---------------- parity features ---------------- */

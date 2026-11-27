@@ -177,3 +177,49 @@ def drop_line(conn: sqlite3.Connection, line_id: int) -> None:
     """Remove an unwanted line from a draft order."""
     conn.execute("DELETE FROM order_line_items WHERE line_id = ?", (line_id,))
     conn.commit()
+
+
+def create_order_from_barcodes(
+    conn: sqlite3.Connection,
+    items: list[dict],
+    customer_id: int | None = None,
+    source: str = "BARCODE",
+    order_date: str | None = None,
+) -> int:
+    """Create a draft order from scanned product barcodes or SKUs."""
+    from ..inventory.management import lookup_barcode
+    from ..ocr.matcher import MatchResult, MATCHED, UNMATCHED
+    from ..ocr.parser import ParseResult
+    from ..ocr.pipeline import SlipResult
+
+    if not isinstance(items, list) or not items:
+        raise OrderError("Scan at least one product before creating an order.")
+    matches = []
+    for item in items:
+        code = str(item.get("barcode") or item.get("sku") or "").strip()
+        try:
+            qty = float(item.get("quantity", 1))
+        except (TypeError, ValueError) as exc:
+            raise OrderError(f"Invalid quantity for barcode {code!r}.") from exc
+        if not code or len(code) > 128:
+            raise OrderError("Every scanned item must have a valid barcode or SKU.")
+        if qty <= 0 or not qty.is_integer():
+            raise OrderError(f"Quantity for {code!r} must be a positive whole number.")
+        product = lookup_barcode(conn, code)
+        matches.append(MatchResult(
+            query_raw=code, quantity=qty,
+            product_id=int(product["product_id"]) if product else None,
+            matched_name=product["name"] if product else None,
+            score=100.0 if product else 0.0,
+            status=MATCHED if product else UNMATCHED,
+        ))
+    slip = SlipResult(
+        image_path=None, raw_text="Barcode scanner input",
+        parse=ParseResult(), matches=matches,
+        matched_count=sum(m.status == MATCHED for m in matches),
+        review_count=0,
+        unmatched_count=sum(m.status == UNMATCHED for m in matches),
+    )
+    return create_order_from_slip(
+        conn, slip, customer_id=customer_id, source=source, order_date=order_date
+    )

@@ -112,13 +112,31 @@ def api_orders():
 
 
 def api_inventory():
+    from src.inventory import management
     from src.inventory.reorder import compute_plan
     def f(c):
+        management.ensure_schema(c)
         plan = compute_plan(c)
-        return [dict(product=r.name, stock=int(r.stock_on_hand),
-                     rop=round(float(r.rop), 1), eoq=round(float(r.eoq), 1),
-                     status=r.status)
-                for r in plan.head(10).itertuples()]
+        planned = {
+            int(row.product_id): {
+                "rop": round(float(row.rop), 1),
+                "eoq": round(float(row.eoq), 1),
+                "status": str(row.status),
+            }
+            for row in plan.itertuples()
+        }
+        rows = management.list_inventory(c)
+        return [{
+            **row, "stock": int(row.get("stock_on_hand") or 0),
+            **planned.get(int(row["product_id"]), {"rop": 0, "eoq": 0, "status": "OK"}),
+        } for row in rows]
+    return q(f)
+
+
+def api_inventory_movements(limit: int = 100):
+    from src.inventory import management
+    def f(c):
+        return management.movement_history(c, limit=limit)
     return q(f)
 
 
@@ -380,6 +398,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_orders())
             if path == "/api/inventory":
                 return self._json(api_inventory())
+            if path == "/api/inventory/movements":
+                return self._json(api_inventory_movements())
             if path == "/api/customers":
                 return self._json(api_customers())
             if path == "/api/models":
@@ -424,6 +444,16 @@ class Handler(BaseHTTPRequestHandler):
                 tok = self.headers.get("Authorization", "").replace("Bearer ", "")
                 SESSIONS.pop(tok, None)
                 return self._json({"ok": True})
+            if path.startswith("/api/order/") and path.endswith("/confirm"):
+                return self._confirm_order(int(path.split("/")[-2]))
+            if path == "/api/inventory/product":
+                return self._create_inventory_product()
+            if path == "/api/inventory/adjust":
+                return self._adjust_inventory()
+            if path == "/api/barcode/lookup":
+                return self._lookup_barcode()
+            if path == "/api/orders/barcode":
+                return self._create_barcode_order()
             if path.startswith("/api/fulfil/"):
                 return self._fulfil(int(path.rsplit("/", 1)[1]))
             if path == "/api/ocr":
@@ -439,6 +469,8 @@ class Handler(BaseHTTPRequestHandler):
                                                int(data["product_id"]))
                 q(f)
                 return self._json({"ok": True})
+        except (ValueError, RuntimeError) as e:
+            return self._json({"error": str(e)}, 400)
         except Exception as e:
             return self._json({"error": f"{e.__class__.__name__}: {e}"}, 500)
         self._json({"error": "not found"}, 404)
@@ -494,21 +526,96 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"token": tok, "user": user})
 
     # ---- actions ----------------------------------------------------------
-    def _fulfil(self, oid: int):
+    def _actor(self):
+        user = self._user() or {}
+        return {"email": user.get("email", "system"),
+                "name": user.get("name", user.get("email", "System"))}
+
+    def _confirm_order(self, oid: int):
         from src.orders import fulfilment
         def f(c):
-            try:
-                s = fulfilment.confirm_order(c, oid)
-            except Exception:
-                s = None
-            res = fulfilment.fulfil_order(c, oid)
-            inv = None
+            summary = fulfilment.confirm_order(c, oid)
+            lines = [dict(r) for r in c.execute(
+                """SELECT l.line_id, l.ordered_qty, l.available_qty, l.status,
+                          p.name AS product
+                   FROM order_line_items l LEFT JOIN products p USING(product_id)
+                   WHERE l.order_id = ? ORDER BY l.line_id""", (oid,)
+            )]
+            return {"summary": summary, "lines": lines}
+        return self._json(q(f))
+
+    def _create_inventory_product(self):
+        from src.inventory import management
+        data = json.loads(self._body() or b"{}")
+        def f(c):
+            pid = management.create_product(
+                c, sku=data.get("sku", ""), name=data.get("name", ""),
+                category=data.get("category", ""), regime=data.get("regime", "MRP"),
+                mrp=data.get("mrp"), wholesale_cost=data.get("wholesale_cost", 0),
+                base_margin_pct=data.get("base_margin_pct", 18),
+                shelf_life_days=data.get("shelf_life_days"), unit=data.get("unit", "pcs"),
+                barcode=data.get("barcode"), opening_stock=data.get("opening_stock", 0),
+                reorder_level=data.get("reorder_level", 0), actor=self._actor(),
+            )
+            return {"ok": True, "product_id": pid}
+        return self._json(q(f), 201)
+
+    def _adjust_inventory(self):
+        from src.inventory import management
+        data = json.loads(self._body() or b"{}")
+        def f(c):
+            return management.adjust_stock(
+                c, int(data.get("product_id", 0)), data.get("quantity", 0),
+                action=data.get("action", ""), actor=self._actor(),
+                note=data.get("note", ""),
+            )
+        return self._json(q(f))
+
+    def _lookup_barcode(self):
+        from src.inventory import management
+        data = json.loads(self._body() or b"{}")
+        def f(c):
+            return {"product": management.lookup_barcode(c, data.get("barcode", ""))}
+        return self._json(q(f))
+
+    def _create_barcode_order(self):
+        from src.orders import intake, availability
+        data = json.loads(self._body() or b"{}")
+        def f(c):
+            oid = intake.create_order_from_barcodes(c, data.get("items", []), source="BARCODE")
+            summary = availability.check_order(c, oid)
+            lines = [dict(r) for r in c.execute(
+                """SELECT l.line_id, l.raw_text, l.ordered_qty, l.available_qty,
+                          l.status, p.name AS product,
+                          COALESCE(i.stock_on_hand, 0) AS stock_on_hand
+                   FROM order_line_items l LEFT JOIN products p USING(product_id)
+                   LEFT JOIN inventory_current i USING(product_id)
+                   WHERE l.order_id = ? ORDER BY l.line_id""", (oid,)
+            )]
+            return {"order_id": oid, "availability": summary, "lines": lines}
+        return self._json(q(f), 201)
+
+    def _fulfil(self, oid: int):
+        from src.orders import fulfilment
+        from src.orders.models import OrderStatus
+        def f(c):
+            order = c.execute(
+                "SELECT status FROM customer_orders WHERE order_id = ?", (oid,)
+            ).fetchone()
+            if order is None:
+                raise ValueError(f"Unknown order #{oid}.")
+            if order["status"] == OrderStatus.DRAFT.value:
+                fulfilment.confirm_order(c, oid)
+            elif order["status"] != OrderStatus.CONFIRMED.value:
+                raise ValueError(f"Order #{oid} is {order['status']} and cannot be fulfilled.")
+            result = fulfilment.fulfil_order(c, oid, actor=self._actor())
+            invoice = None
             try:
                 from src.invoices import generator
-                inv = generator.generate_for_order(c, oid)["invoice"]
+                invoice = generator.generate_for_order(c, oid)["invoice"]
             except Exception:
                 pass
-            return {"fulfilment": res, "invoice": inv, "confirm": s}
+            return {"fulfilment": result, "invoice": invoice}
         return self._json(q(f))
 
     def _invoice(self, oid: int):
@@ -519,23 +626,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, Path(pdf).read_bytes(), "application/pdf")
 
     def _ocr(self):
-        from src.ocr import engine as oe, pipeline
+        from src.ocr import engine as oe, receipt
         if not oe.tesseract_available():
             return self._json({
-                "error": "Tesseract OCR is not installed on this machine. "
-                         "Windows: run  winget install --id UB-Mannheim."
-                         "TesseractOCR  (or download the installer from "
-                         "github.com/UB-Mannheim/tesseract/wiki), then "
-                         "RESTART this server and try again."}, 501)
+                "error": "Tesseract OCR is not installed. Install Tesseract OCR and restart the server."
+            }, 501)
         raw = self._body()
-        tmp = Path(tempfile.mkdtemp(prefix="ui_ocr_")) / "slip.png"
-        tmp.write_bytes(raw)
+        if len(raw) > receipt.MAX_UPLOAD_BYTES:
+            return self._json({"error": "Receipt exceeds the 15 MB upload limit."}, 413)
+        filename = self.headers.get("X-Filename", "receipt-upload")
         def f(c):
-            res = pipeline.process_slip(tmp, conn=c)
-            return [{"raw": m.query_raw, "qty": m.quantity,
-                     "match": m.matched_name, "score": round(m.score, 1),
-                     "status": m.status, "pid": m.product_id}
-                    for m in res.matches]
+            slip = receipt.process_receipt(raw, filename, conn=c)
+            from src.orders import intake, availability
+            oid = intake.create_order_from_slip(c, slip, source="RECEIPT-OCR")
+            summary = availability.check_order(c, oid)
+            lines = [dict(r) for r in c.execute(
+                """SELECT l.line_id, l.raw_text, l.ordered_qty, l.available_qty,
+                          l.status, l.unit_price, l.line_total, p.name AS product,
+                          COALESCE(i.stock_on_hand, 0) AS stock_on_hand
+                   FROM order_line_items l LEFT JOIN products p USING(product_id)
+                   LEFT JOIN inventory_current i USING(product_id)
+                   WHERE l.order_id = ? ORDER BY l.line_id""", (oid,)
+            )]
+            return {"order_id": oid, "summary": slip.summarise(),
+                    "availability": summary, "lines": lines,
+                    "raw_text": slip.raw_text}
         return self._json(q(f))
 
 

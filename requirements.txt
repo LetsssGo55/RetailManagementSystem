@@ -28,3 +28,6 @@ seaborn>=0.13
 pyyaml>=6.0
 pytest>=7.4
 faker>=20.0
+
+# PDF receipt rasterization for OCR
+pypdfium2>=4.30
