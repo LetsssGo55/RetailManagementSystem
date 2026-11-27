@@ -331,8 +331,21 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
 
       <!-- ORDERS -->
       <section class="view" id="view-orders">
-        <div class="page-head"><div><h1>Orders</h1>
-          <p>Recent orders + live dispatch queue. Fulfil sends stock &amp; prints invoice.</p></div></div>
+        <div class="page-head"><div><h1>Orders &amp; picking wave</h1>
+          <p>Buyer-linked receipts, shared-stock allocation and fulfilment priority.</p></div></div>
+        <div class="card"><div class="card-h"><h3>Consolidated picking wave</h3>
+          <span class="badge" id="wave-count">0 open orders</span></div>
+          <div class="card-b">
+            <p id="wave-rule" class="muted" style="margin-bottom:.75rem"></p>
+            <div class="grid cols-4" id="wave-kpis"></div>
+          </div>
+          <div class="card-h"><h3>Buyer / order priority</h3><span class="muted">Ready orders first, then highest available share, then FIFO</span></div>
+          <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="wave-orders-table"></table></div>
+          <div class="card-h"><h3>Consolidated product baskets</h3><span class="muted">Same products from different receipts grouped together</span></div>
+          <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="wave-baskets-table"></table></div>
+          <div class="card-h"><h3>Frequently bought together</h3><span class="muted">Suggestions from saved FP-Growth rules; not auto-added</span></div>
+          <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="wave-suggestions-table"></table></div>
+        </div>
         <div class="card"><div class="card-h"><h3>Dispatch queue</h3></div>
           <div class="card-b" style="padding-top:0"><table id="queue-table"></table></div></div>
         <div class="card"><div class="card-h"><h3>Recent orders</h3>
@@ -352,6 +365,11 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
       <section class="view" id="view-ocr">
         <div class="page-head"><div><h1>OCR Intake</h1>
           <p>Upload a customer receipt / order slip (image or PDF). Review matched stock before confirming fulfilment.</p></div></div>
+        <div class="card"><div class="card-b">
+          <div class="field"><label>Receipt belongs to buyer</label>
+            <select id="ocr-buyer" class="sel" required></select></div>
+          <p class="muted" style="margin-top:.35rem">Choose the customer before scanning. Each receipt becomes a separate buyer-linked order.</p>
+        </div></div>
         <div class="grid cols-2">
           <div class="card"><div class="card-h"><h3>Upload slip</h3></div>
             <div class="card-b"><div class="empty" id="drop"
@@ -402,6 +420,7 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
               <div style="margin:1rem 0;border-top:1px solid hsl(var(--border))"></div>
               <h3 style="font-size:14px;margin-bottom:.6rem">Barcode order scanner</h3>
               <p class="muted" style="margin-bottom:.6rem">Use a USB/Bluetooth scanner in keyboard-wedge mode or type a barcode/SKU. Scan each item, then create a draft order.</p>
+              <div class="field"><label>Order belongs to buyer</label><select id="barcode-buyer" class="sel" required></select></div>
               <div class="field"><label>Scan barcode / SKU</label><input id="barcode-input" autocomplete="off" placeholder="Scan item barcode and press Enter"></div>
               <div id="barcode-found" class="muted" style="margin:.45rem 0"></div>
               <div id="barcode-cart" style="overflow-x:auto"></div>
@@ -413,7 +432,8 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
         <div class="card"><div class="card-h"><h3>Current stock</h3><span class="muted">All active products</span></div>
           <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="inv-table"></table></div></div>
         <div class="card"><div class="card-h"><h3>Stock movement audit log</h3>
-          <span class="muted">Opening balances, manual changes and fulfilled orders</span></div>
+          <span class="muted">Opening balances, manual changes and fulfilled orders</span>
+          <button class="btn outline" type="button" onclick="downloadInventoryLog()">Download CSV log</button></div>
           <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="movement-table"></table></div></div>
       </section>
 
@@ -463,6 +483,17 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
       <section class="view" id="view-customers">
         <div class="page-head"><div><h1>Customers</h1>
           <p>Live segmentation (personalisation engine).</p></div></div>
+        <div class="card"><div class="card-h"><h3>Register a buyer</h3>
+          <span class="muted">Buyers are assigned to each scanned receipt / order</span></div>
+          <div class="card-b">
+            <form id="buyer-form" class="form-grid">
+              <div class="field"><label>Buyer name</label><input name="name" required maxlength="120" placeholder="Customer name"></div>
+              <div class="field"><label>Phone number (optional)</label><input name="phone" maxlength="32" placeholder="Contact number"></div>
+              <button class="btn" type="submit">Add buyer</button>
+              <span id="buyer-msg" class="muted" role="status"></span>
+            </form>
+          </div>
+        </div>
         <div class="grid cols-4" id="seg-row"></div>
         <div class="card"><div class="card-h"><h3>Personalised recommendations</h3>
           <select class="sel" id="rec-pick"></select></div>
@@ -667,6 +698,63 @@ function renderBasketProducts(products){
   else{$("#basket-product-summary").innerHTML="";$("#basket-product-note").textContent="No products are available in the catalogue.";}
 }
 
+/* ---------------- buyer assignment + picking wave ---------------- */
+function renderBuyers(rows){
+  ["#ocr-buyer","#barcode-buyer"].forEach(selector=>{
+    const sel=$(selector);if(!sel)return;
+    const previous=sel.value;
+    sel.innerHTML=rows.map(b=>'<option value="'+b.customer_id+'">'+
+      esc(b.name||"Buyer")+" (#"+b.customer_id+")"+
+      (b.phone?" · "+esc(b.phone):"")+"</option>").join("");
+    if(rows.some(b=>String(b.customer_id)===previous))sel.value=previous;
+    if(!rows.length)sel.innerHTML='<option value="">Add a buyer in Customers first</option>';
+  });
+}
+function renderPickingWave(wave){
+  wave=wave||{};
+  const orders=wave.priority_orders||[];
+  const baskets=(wave.category_groups||[]).flatMap(group=>
+    group.products.map(p=>({...p,category:group.category})));
+  const suggestions=wave.suggestions||[];
+  $("#wave-count").textContent=(wave.open_orders||0)+" open orders";
+  $("#wave-rule").textContent=wave.priority_rule||"No open orders.";
+  const ready=orders.filter(o=>o.dispatch==="READY").length;
+  const partial=orders.filter(o=>o.dispatch==="PARTIAL").length;
+  const hold=orders.filter(o=>o.dispatch==="HOLD").length;
+  $("#wave-kpis").innerHTML=[
+    ["Open buyer orders",orders.length],
+    ["Ready first",ready],
+    ["Partial allocation",partial],
+    ["Hold / review",hold]
+  ].map(x=>'<div class="card stat"><div class="lbl">'+x[0]+'</div><div class="val">'+x[1]+'</div></div>').join("");
+  table($("#wave-orders-table"),
+    ["Priority","Buyer","Order","Date","Status","Available","Requested","Allocated","Short","Dispatch"],
+    orders.map(o=>[o.priority_rank,esc(o.buyer)+" (#"+(o.customer_id??"—")+")",
+      "#"+o.order_id,esc(o.order_date||"—"),stBadge(o.status),
+      fmt(o.planned_fulfilment_pct)+"%",fmt(o.requested_units),fmt(o.allocated_units),
+      fmt(o.short_units),stBadge(o.dispatch)]));
+  table($("#wave-baskets-table"),
+    ["Category","Product","Total requested","Pick from stock","Short","Stock at start","Remaining","Buyer-wise picks"],
+    baskets.map(p=>[esc(p.category),esc(p.product)+" · "+esc(p.sku),
+      fmt(p.requested_qty)+" "+esc(p.unit),fmt(p.pick_qty)+" "+esc(p.unit),
+      fmt(p.short_qty)+" "+esc(p.unit),fmt(p.stock_at_wave_start),
+      fmt(p.remaining_after_wave),
+      p.buyers.map(b=>esc(b.buyer)+" (#"+b.order_id+"): "+fmt(b.pick_qty)+"/"+fmt(b.requested_qty)).join("<br>")]));
+  table($("#wave-suggestions-table"),
+    ["Buyer","Order","Often bought with","Based on","Confidence","Lift","Stock after wave"],
+    suggestions.map(s=>[esc(s.buyer), "#"+s.order_id,esc(s.suggested_product),
+      esc(s.based_on),(Number(s.confidence)*100).toFixed(1)+"%",
+      fmt(s.lift),fmt(s.stock_after_wave)]));
+}
+async function downloadInventoryLog(){
+  const response=await api("/api/inventory/movements.csv");
+  if(!response.ok){const data=await response.json().catch(()=>({}));alert(data.error||"Could not create audit log.");return;}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");link.href=url;
+  link.download="inventory_movements.csv";link.click();URL.revokeObjectURL(url);
+}
+
 /* ---------------- operational inventory management ---------------- */
 let barcodeCart=[];
 function renderInventoryControls(rows,movements){
@@ -678,11 +766,13 @@ function renderInventoryControls(rows,movements){
   table($("#inv-table"),["SKU","Product","Category","Barcode","Stock","Reorder","ROP","EOQ","Status"],
     rows.map(p=>[esc(p.sku),esc(p.name),esc(p.category),esc(p.barcode||"—"),
       fmt(p.stock),fmt(p.reorder_level),fmt(p.rop),fmt(p.eoq),stBadge(p.status)]));
-  table($("#movement-table"),["When","Product","Movement","Change","Before","After","Reference","User","Note"],
+  table($("#movement-table"),["Date / time","Product","Movement","Change","Stock before","Remaining","Buyer","Operator","Reference","Note"],
     movements.map(m=>[esc(m.created_at),esc(m.product),esc(m.movement_type),
-      (Number(m.change_qty)>0?"+":"")+fmt(m.change_qty),fmt(m.stock_before),
-      fmt(m.stock_after),esc(m.reference_type?m.reference_type+" #"+m.reference_id:"—"),
+      (Number(m.change_qty)>0?"+":"")+fmt(m.change_qty)+" "+esc(m.unit||""),
+      fmt(m.stock_before),fmt(m.stock_after),
+      esc(m.customer_name||"—")+(m.customer_id?" (#"+m.customer_id+")":""),
       esc(m.actor_name)+"<br><span class='muted'>"+esc(m.actor_email)+"</span>",
+      esc(m.reference_type?m.reference_type+" #"+m.reference_id:"—"),
       esc(m.note||"—")]));
 }
 function drawBarcodeCart(){
@@ -716,9 +806,11 @@ $("#barcode-input").addEventListener("keydown",async event=>{
 });
 $("#barcode-order").addEventListener("click",async()=>{
   if(!barcodeCart.length)return;
+  if(!$("#barcode-buyer").value){$("#barcode-msg").textContent="Select a buyer before creating this order.";return;}
   const response=await api("/api/orders/barcode",{method:"POST",
     headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({items:barcodeCart.map(x=>({barcode:x.barcode,quantity:x.quantity}))})});
+    body:JSON.stringify({customer_id:Number($("#barcode-buyer").value),
+      items:barcodeCart.map(x=>({barcode:x.barcode,quantity:x.quantity}))})});
   const data=await response.json();
   if(!response.ok){$("#barcode-msg").textContent=data.error||"Could not create draft order.";return;}
   $("#barcode-msg").textContent="Draft order #"+data.order_id+
@@ -737,6 +829,18 @@ $("#product-form").addEventListener("submit",async event=>{
     (data.error||"Could not add product.");
   if(response.ok){event.currentTarget.reset();event.currentTarget.elements.unit.value="pcs";await loadAll();}
 });
+$("#buyer-form").addEventListener("submit",async event=>{
+  event.preventDefault();
+  const form=Object.fromEntries(new FormData(event.currentTarget).entries());
+  const response=await api("/api/buyers/create",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+  const data=await response.json();
+  $("#buyer-msg").textContent=response.ok?"Buyer "+data.name+" (#"+data.customer_id+") added.":
+    (data.error||"Could not add buyer.");
+  if(response.ok){event.currentTarget.reset();await loadAll();
+    $("#ocr-buyer").value=String(data.customer_id);
+    $("#barcode-buyer").value=String(data.customer_id);}
+});
 $("#adjust-form").addEventListener("submit",async event=>{
   event.preventDefault();
   const form=Object.fromEntries(new FormData(event.currentTarget).entries());
@@ -752,11 +856,12 @@ $("#adjust-form").addEventListener("submit",async event=>{
 
 /* ---------------- loaders ---------------- */
 async function loadAll(){
-  const [kp,cards,ord,inv,movements,cust,mod,sim,fc,segments,basketProducts]=await Promise.all([
+  const [kp,cards,ord,inv,movements,buyers,wave,cust,mod,sim,fc,segments,basketProducts]=await Promise.all([
     J("/api/kpis"),J("/api/cards"),J("/api/orders"),J("/api/inventory"),
-    J("/api/inventory/movements"),J("/api/customers"),J("/api/models"),J("/api/simulation"),
+    J("/api/inventory/movements"),J("/api/buyers"),J("/api/picking-wave"),
+    J("/api/customers"),J("/api/models"),J("/api/simulation"),
     J("/api/forecast"),J("/api/product-segments"),J("/api/basket-products")]);
-  window.D={orders:ord,inv,cust,segments,basketProducts};
+  window.D={orders:ord,inv,cust,segments,basketProducts,buyers,wave};
   const hh=await J("/api/health");
   if($("#data-banner"))$("#data-banner").hidden=!!hh.ready;
 
@@ -764,6 +869,8 @@ async function loadAll(){
   $("#n-cards").textContent=cards.length;
   $("#n-orders").textContent=ord.queue.length;
   renderDecisionCards(cards);
+  renderBuyers(buyers||[]);
+  renderPickingWave(wave||{});
 
   const adv=kp.system-kp.naive, pct=kp.naive?adv/Math.abs(kp.naive)*100:0;
   $("#kpi-row").innerHTML=[
@@ -794,8 +901,10 @@ async function loadAll(){
   table($("#orders-table"),["Order","Customer","Value","Fulfil","Status",""],
     ord.recent.map(o=>[...orow(o),
       ["DRAFT","CONFIRMED"].includes(o.status)
-        ? `<button class="btn outline" style="padding:.2rem .6rem"
-            onclick="fulfil(${o.order_id})">Review &amp; confirm</button>`
+        ? (wave.priority_orders?.[0]?.order_id===o.order_id
+            ? `<button class="btn outline" style="padding:.2rem .6rem"
+                onclick="fulfil(${o.order_id})">Review &amp; confirm · #1</button>`
+            : `<span class="muted">Next pick #${wave.priority_orders?.[0]?.order_id??"—"}</span>`)
         : `<span class="muted">${esc(o.status)}</span>`]));
   table($("#queue-table"),["Rank","Order","Fulfilment","Value","Flag"],
     ord.queue.map(e=>[e.rank,"#"+e.order,e.fulfilment+"%",inr(e.value),
@@ -931,10 +1040,12 @@ $("#drop").addEventListener("dragover",e=>e.preventDefault());
 $("#drop").addEventListener("drop",e=>{e.preventDefault();
   if(e.dataTransfer.files[0])sendSlip(e.dataTransfer.files[0]);});
 async function sendSlip(f){
+  if(!$("#ocr-buyer").value){alert("Select the buyer for this receipt first.");return;}
   $("#ocr-badge").textContent="processing…";
   const response=await api("/api/ocr",{method:"POST",
     headers:{"Content-Type":f.type||"application/octet-stream",
-      "X-Filename":encodeURIComponent(f.name||"receipt")},
+      "X-Filename":encodeURIComponent(f.name||"receipt"),
+      "X-Customer-ID":$("#ocr-buyer").value},
     body:await f.arrayBuffer()});
   const data=await response.json();
   if(!response.ok){$("#ocr-badge").textContent="error";alert(data.error);return;}
