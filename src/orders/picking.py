@@ -251,22 +251,27 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
             if len(added) >= 5:
                 break
 
-    grouped: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    grouped: dict[tuple[str, str, int | None], list[dict]] = defaultdict(list)
     for item in product_wave.values():
         item["requested_qty"] = round(item["requested_qty"], 3)
         item["pick_qty"] = round(item["pick_qty"], 3)
         item["short_qty"] = round(item["short_qty"], 3)
         item["remaining_after_wave"] = round(item["remaining_after_wave"], 3)
-        grouped[(item["category"], item["tier"])].append(item)
+        grouped[(item["category"], item["tier"], item["cluster"])].append(item)
 
     category_groups = [
         {
             "category": category,
             "tier": tier,
+            "cluster": cluster,
             "products": sorted(items, key=lambda item: item["product"].casefold()),
         }
-        for (category, tier), items in sorted(
-            grouped.items(), key=lambda pair: (pair[0][0].casefold(), pair[0][1])
+        for (category, tier, cluster), items in sorted(
+            grouped.items(),
+            key=lambda pair: (
+                pair[0][0].casefold(), pair[0][1],
+                pair[0][2] if pair[0][2] is not None else -1,
+            ),
         )
     ]
     return {

@@ -135,3 +135,19 @@ def test_cross_sell_does_not_recommend_stock_reserved_by_later_buyer(conn):
         rec["suggested_product_id"] != 3
         for rec in wave["suggestions"]
     )
+
+
+def test_basket_groups_retain_sales_cluster_assignment(conn):
+    conn.execute(
+        """INSERT INTO ml_cluster_assignment
+           (product_id, cluster, tier, velocity, silhouette)
+           VALUES (1, 2, 'FAST', 0.4, 0.2)"""
+    )
+    conn.commit()
+    wave = build_picking_wave(conn)
+    rice_group = next(
+        group for group in wave["category_groups"]
+        if any(item["product_id"] == 1 for item in group["products"])
+    )
+    assert rice_group["tier"] == "FAST"
+    assert rice_group["cluster"] == 2

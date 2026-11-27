@@ -48,3 +48,39 @@ and `ORDER_FULFILMENT`.
 
 Removing units is a stock adjustment; catalogue products are retained for
 historic order and audit references rather than physically deleted.
+
+
+## Multi-buyer receipts and consolidated picking
+
+Before uploading a receipt or creating a barcode order, select the buyer. New
+buyers can be registered in the Customers section. Receipt and scanner orders
+retain that buyer ID, independently of the signed-in operator who later
+fulfils the order.
+
+The Orders page builds a read-only picking wave across every open order. It
+allocates the shared stock snapshot once, prioritising fully fulfilable orders,
+then higher standalone fulfilment percentage, then FIFO. Identical products
+are combined into category / K-Means sales-tier / cluster baskets, with the
+requested, pickable, short and remaining quantities shown along with each
+buyer's share. The plan does not alter stock; actual deductions occur only
+when the next-priority order is confirmed and fulfilled. The server rejects
+fulfilment out of priority order, and the wave is recalculated after every
+completed order.
+
+Frequently bought-together suggestions come from the persisted FP-Growth
+association rules in `bundle_recommendations`. Suggestions are advisory and
+are not silently added to a buyer's order. They are hidden when there is no
+stock left after planned picking.
+
+## Buyer-aware stock audit file
+
+The SQLite `inventory_movements` table remains the authoritative ledger.
+Existing on-hand stock is imported once as `OPENING_BALANCE` movements when
+the audit schema is first enabled. Each subsequent movement records its
+timestamp, product, signed quantity, stock before and after, buyer (when tied
+to an order), signed-in operator, reason and order reference.
+
+A CSV projection is written to `logs/inventory_movements.csv` beside the
+configured database file. The Inventory page's **Download CSV log** action
+refreshes and downloads that complete ledger. Columns distinguish the
+customer/buyer from the operator who performed the action.
