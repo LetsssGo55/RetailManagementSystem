@@ -62,24 +62,36 @@ def ensure_schema(conn: sqlite3.Connection, *, backfill_opening: bool = True) ->
             "ALTER TABLE inventory_movements ADD COLUMN customer_name TEXT"
         )
     if backfill_opening:
-        # Capture the live balance once for products that pre-date this ledger.
-        # Products that already have movement history are never backfilled again.
-        conn.execute(
-            """INSERT INTO inventory_movements
-               (product_id, movement_type, quantity, change_qty,
-                stock_before, stock_after, reference_type, note,
-                actor_email, actor_name)
-               SELECT i.product_id, 'OPENING_BALANCE', i.stock_on_hand,
-                      i.stock_on_hand, 0, i.stock_on_hand, 'MIGRATION',
-                      'Opening balance imported when stock audit was enabled',
-                      'system', 'System opening-balance import'
-               FROM inventory_current i
-               WHERE i.stock_on_hand > 0
-                 AND NOT EXISTS (
-                     SELECT 1 FROM inventory_movements m
-                     WHERE m.product_id = i.product_id
-                 )"""
-        )
+        # Capture legacy stock in its own savepoint when no caller transaction
+        # exists. This prevents the first read/API call from leaving an
+        # uncommitted migration write that gets rolled back on connection close.
+        owns_transaction = not conn.in_transaction
+        if owns_transaction:
+            conn.execute("SAVEPOINT inventory_opening_import")
+        try:
+            conn.execute(
+                """INSERT INTO inventory_movements
+                   (product_id, movement_type, quantity, change_qty,
+                    stock_before, stock_after, reference_type, note,
+                    actor_email, actor_name)
+                   SELECT i.product_id, 'OPENING_BALANCE', i.stock_on_hand,
+                          i.stock_on_hand, 0, i.stock_on_hand, 'MIGRATION',
+                          'Opening balance imported when stock audit was enabled',
+                          'system', 'System opening-balance import'
+                   FROM inventory_current i
+                   WHERE i.stock_on_hand > 0
+                     AND NOT EXISTS (
+                         SELECT 1 FROM inventory_movements m
+                         WHERE m.product_id = i.product_id
+                     )"""
+            )
+            if owns_transaction:
+                conn.execute("RELEASE SAVEPOINT inventory_opening_import")
+        except Exception:
+            if owns_transaction:
+                conn.execute("ROLLBACK TO SAVEPOINT inventory_opening_import")
+                conn.execute("RELEASE SAVEPOINT inventory_opening_import")
+            raise
 
 @contextmanager
 def _atomic(conn: sqlite3.Connection):

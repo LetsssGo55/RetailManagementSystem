@@ -25,6 +25,8 @@ def build_picking_wave(conn: sqlite3.Connection) -> dict:
             "name": row["name"],
             "sku": row["sku"],
             "category": row["category"] or "Uncategorised",
+            "tier": row["tier"] or "UNASSIGNED",
+            "cluster": row["cluster"],
             "unit": row["unit"] or "unit",
         }
         for row in conn.execute(

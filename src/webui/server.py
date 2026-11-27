@@ -139,7 +139,9 @@ def api_inventory():
 def api_inventory_movements(limit: int = 100):
     from src.inventory import management
     def f(c):
-        return management.movement_history(c, limit=limit)
+        rows = management.movement_history(c, limit=limit)
+        management.sync_audit_file(c)
+        return rows
     return q(f)
 
 
