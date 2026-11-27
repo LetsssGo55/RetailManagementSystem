@@ -638,11 +638,19 @@ class Handler(BaseHTTPRequestHandler):
     def _create_barcode_order(self):
         from src.orders import intake, availability
         data = json.loads(self._body() or b"{}")
+        try:
+            customer_id = int(data.get("customer_id") or 0)
+        except (TypeError, ValueError):
+            customer_id = 0
+        if customer_id <= 0:
+            return self._json({"error": "Select a buyer before creating this barcode order."}, 400)
         def f(c):
+            if not c.execute(
+                "SELECT 1 FROM customers WHERE customer_id = ?", (customer_id,)
+            ).fetchone():
+                raise ValueError("Selected buyer was not found.")
             oid = intake.create_order_from_barcodes(
-                c, data.get("items", []),
-                customer_id=int(data["customer_id"]) if data.get("customer_id") else None,
-                source="BARCODE",
+                c, data.get("items", []), customer_id=customer_id, source="BARCODE"
             )
             summary = availability.check_order(c, oid)
             lines = [dict(r) for r in c.execute(
@@ -715,6 +723,8 @@ class Handler(BaseHTTPRequestHandler):
             customer_id = int(customer_header) if customer_header else None
         except (TypeError, ValueError):
             return self._json({"error": "Invalid buyer selection."}, 400)
+        if customer_id is None:
+            return self._json({"error": "Select a buyer before uploading this receipt."}, 400)
         def f(c):
             slip = receipt.process_receipt(raw, filename, conn=c)
             from src.orders import intake, availability

@@ -728,11 +728,11 @@ function renderPickingWave(wave){
     ["Hold / review",hold]
   ].map(x=>'<div class="card stat"><div class="lbl">'+x[0]+'</div><div class="val">'+x[1]+'</div></div>').join("");
   table($("#wave-orders-table"),
-    ["Priority","Buyer","Order","Date","Status","Available","Requested","Allocated","Short","Dispatch"],
+    ["Priority","Buyer","Order","Date","Status","Available","Requested","Allocated","Short","Review lines","Dispatch"],
     orders.map(o=>[o.priority_rank,esc(o.buyer)+" (#"+(o.customer_id??"—")+")",
       "#"+o.order_id,esc(o.order_date||"—"),stBadge(o.status),
       fmt(o.planned_fulfilment_pct)+"%",fmt(o.requested_units),fmt(o.allocated_units),
-      fmt(o.short_units),stBadge(o.dispatch)]));
+      fmt(o.short_units),o.unresolved_lines,stBadge(o.dispatch)]));
   table($("#wave-baskets-table"),
     ["Category / tier","Product","Total requested","Pick from stock","Short","Stock at start","Remaining","Buyer-wise picks"],
     baskets.map(p=>[esc(p.category)+" · "+esc(p.group_tier||p.tier||"UNASSIGNED")+
@@ -907,9 +907,12 @@ async function loadAll(){
                 onclick="fulfil(${o.order_id})">Review &amp; confirm · #1</button>`
             : `<span class="muted">Next pick #${wave.priority_orders?.[0]?.order_id??"—"}</span>`)
         : `<span class="muted">${esc(o.status)}</span>`]));
-  table($("#queue-table"),["Rank","Order","Fulfilment","Value","Flag"],
-    ord.queue.map(e=>[e.rank,"#"+e.order,e.fulfilment+"%",inr(e.value),
-      stBadge(e.flag==="HOLD"?"HOLD":e.flag)]));
+  table($("#queue-table"),["Rank","Buyer","Order","Planned fulfilment","Allocated","Short","Dispatch"],
+    (wave.priority_orders||[]).map(o=>[
+      o.priority_rank,esc(o.buyer), "#"+o.order_id,
+      fmt(o.planned_fulfilment_pct)+"%",fmt(o.allocated_units),
+      fmt(o.short_units),stBadge(o.dispatch)
+    ]));
 
   renderInventoryControls(inv,movements);
 
