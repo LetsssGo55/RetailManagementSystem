@@ -1,37 +1,44 @@
 """Phase 13 — manual stock management + audit ledger tests."""
+import os
 import sqlite3
+import tempfile
 
 import pytest
 
-from src import config
 from src.data import database
 from src.inventory import management
 
 
 @pytest.fixture
 def conn():
-    database.build_database()
-    database.reset_database()          # clean slate for every test
-    database.load_config_into_db()
-    c = database.get_connection()
-    # minimal seed: two products + stock + one customer + one confirmed order
-    c.executescript("""
-        INSERT INTO products (sku,name,category,regime,mrp,wholesale_cost,is_active)
-        VALUES ('SKU-1','Basmati Rice','Grocery','MRP',110.0,70.0,1),
-               ('SKU-2','Parle-G Biscuit','Snacks','MRP',10.0,6.0,1);
-        INSERT INTO inventory_current (product_id,stock_on_hand,reorder_level)
-        VALUES (1,50,5),(2,100,10);
-        INSERT INTO customers (customer_id,name) VALUES (1,'Walk-in');
-        INSERT INTO customer_orders (order_id,customer_id,order_date,source,status,total_value)
-        VALUES (101,1,'2025-01-01','manual','CONFIRMED',0);
-        INSERT INTO order_line_items (order_id,product_id,raw_text,ordered_qty,
+    # Use a temporary file database so we don't wipe the production DB
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        database.build_database(db_path=path)
+        database.reset_database(db_path=path)          # clean slate for every test
+        database.load_config_into_db(db_path=path)
+        c = database.get_connection(db_path=path)
+        # minimal seed: two products + stock + one customer + one confirmed order
+        c.executescript("""
+            INSERT INTO products (sku,name,category,regime,mrp,wholesale_cost,is_active)
+            VALUES ('SKU-1','Basmati Rice','Grocery','MRP',110.0,70.0,1),
+                   ('SKU-2','Parle-G Biscuit','Snacks','MRP',10.0,6.0,1);
+            INSERT INTO inventory_current (product_id,stock_on_hand,reorder_level)
+            VALUES (1,50,5),(2,100,10);
+            INSERT INTO customers (customer_id,name) VALUES (1,'Walk-in');
+            INSERT INTO customer_orders (order_id,customer_id,order_date,source,status,total_value)
+            VALUES (101,1,'2025-01-01','manual','CONFIRMED',0);
+            INSERT INTO order_line_items (order_id,product_id,raw_text,ordered_qty,
                  available_qty,status,unit_price,line_total)
-        VALUES (101,1,'Basmati Rice',5,5,'READY',110.0,550.0),
-               (101,2,'Parle-G Biscuit',10,10,'READY',10.0,100.0);
-        """)
-    c.commit()
-    yield c
-    c.close()
+            VALUES (101,1,'Basmati Rice',5,5,'READY',110.0,550.0),
+                   (101,2,'Parle-G Biscuit',10,10,'READY',10.0,100.0);
+            """)
+        c.commit()
+        yield c
+    finally:
+        c.close()
+        os.unlink(path)
 
 
 # ---------------------------------------------------------------------------
