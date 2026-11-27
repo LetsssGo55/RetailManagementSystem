@@ -793,8 +793,10 @@ async function loadAll(){
     ord.recent.slice(0,6).map(orow));
   table($("#orders-table"),["Order","Customer","Value","Fulfil","Status",""],
     ord.recent.map(o=>[...orow(o),
-      `<button class="btn outline" style="padding:.2rem .6rem"
-        onclick="fulfil(${o.order_id})">Review &amp; confirm</button>`]));
+      ["DRAFT","CONFIRMED"].includes(o.status)
+        ? `<button class="btn outline" style="padding:.2rem .6rem"
+            onclick="fulfil(${o.order_id})">Review &amp; confirm</button>`
+        : `<span class="muted">${esc(o.status)}</span>`]));
   table($("#queue-table"),["Rank","Order","Fulfilment","Value","Flag"],
     ord.queue.map(e=>[e.rank,"#"+e.order,e.fulfilment+"%",inr(e.value),
       stBadge(e.flag==="HOLD"?"HOLD":e.flag)]));

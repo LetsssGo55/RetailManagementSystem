@@ -76,3 +76,48 @@ def test_create_product_registers_stock_and_barcode(conn):
 
 def test_barcode_not_found_returns_none(conn):
     assert management.lookup_barcode(conn, "0000000000000") is None
+
+
+
+def test_barcode_order_deducts_stock_once_and_logs_confirming_user(conn):
+    from src.inventory.management import ensure_schema, movement_history
+    from src.orders import fulfilment, intake
+    from src.orders.intake import OrderError
+
+    conn.execute(
+        "INSERT INTO customers (name, phone, segment) VALUES ('Barcode Buyer', '9000000000', 'NEW')"
+    )
+    ensure_schema(conn)
+    conn.execute(
+        "INSERT INTO product_barcodes (barcode, product_id) VALUES ('8901112223334', 1)"
+    )
+    conn.commit()
+
+    order_id = intake.create_order_from_barcodes(
+        conn, [{"barcode": "8901112223334", "quantity": 2}]
+    )
+    preview = fulfilment.confirm_order(conn, order_id)
+    assert preview["fulfilment_pct"] == 100.0
+
+    actor = {"name": "Counter Operator", "email": "counter@example.com"}
+    result = fulfilment.fulfil_order(conn, order_id, actor=actor)
+    assert result["status"] == "FULFILLED"
+    assert conn.execute(
+        "SELECT stock_on_hand FROM inventory_current WHERE product_id = 1"
+    ).fetchone()[0] == 10
+
+    movement = movement_history(conn, limit=10)[0]
+    assert movement["movement_type"] == "ORDER_FULFILMENT"
+    assert movement["change_qty"] == -2
+    assert movement["stock_before"] == 12
+    assert movement["stock_after"] == 10
+    assert movement["reference_type"] == "ORDER"
+    assert movement["reference_id"] == order_id
+    assert movement["actor_email"] == "counter@example.com"
+    assert movement["actor_name"] == "Counter Operator"
+
+    with pytest.raises(OrderError, match="already fulfilled"):
+        fulfilment.fulfil_order(conn, order_id, actor=actor)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM inventory_movements WHERE movement_type = 'ORDER_FULFILMENT'"
+    ).fetchone()[0] == 1
