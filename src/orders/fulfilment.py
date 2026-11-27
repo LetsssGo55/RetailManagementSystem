@@ -13,6 +13,7 @@ import sqlite3
 from .availability import check_order
 from .intake import OrderError
 from .models import LineStatus, OrderStatus
+from ..inventory import management as inventory_management
 
 
 def confirm_order(conn: sqlite3.Connection, order_id: int) -> dict:
@@ -47,7 +48,7 @@ def confirm_order(conn: sqlite3.Connection, order_id: int) -> dict:
     return summary
 
 
-def fulfil_order(conn: sqlite3.Connection, order_id: int) -> dict:
+def fulfil_order(conn: sqlite3.Connection, order_id: int, actor: dict | None = None) -> dict:
     """
     Deduct stock for the available qty of each line and close the order.
     Fully-fulfilled → FULFILLED, otherwise PARTIALLY_FULFILLED is expressed
@@ -78,6 +79,18 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int) -> dict:
             raise OrderError(f"Order {order_id} has {bad} unresolved line(s).")
         check_order(conn, order_id)
 
+    inventory_management.ensure_schema(conn)
+    conn.execute("BEGIN IMMEDIATE")
+    current = conn.execute(
+        "SELECT status FROM customer_orders WHERE order_id = ?", (order_id,)
+    ).fetchone()
+    if current is None or current["status"] == OrderStatus.FULFILLED.value:
+        conn.rollback()
+        raise OrderError(f"Order {order_id} has already been fulfilled.")
+    if current["status"] == OrderStatus.CANCELLED.value:
+        conn.rollback()
+        raise OrderError(f"Order {order_id} is cancelled.")
+
     lines = conn.execute(
         "SELECT line_id, product_id, ordered_qty, available_qty "
         "FROM order_line_items WHERE order_id = ? AND product_id IS NOT NULL",
@@ -90,6 +103,11 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int) -> dict:
         avail = float(ln["available_qty"] or 0.0)
         if avail <= 0:
             continue
+        before_row = conn.execute(
+            "SELECT stock_on_hand FROM inventory_current WHERE product_id = ?",
+            (ln["product_id"],),
+        ).fetchone()
+        stock_before = float(before_row["stock_on_hand"]) if before_row else 0.0
         # guarded deduction — never below zero even under concurrency
         cur = conn.execute(
             "UPDATE inventory_current "
@@ -126,6 +144,14 @@ def fulfil_order(conn: sqlite3.Connection, order_id: int) -> dict:
         new_stock = conn.execute(
             "SELECT stock_on_hand, reorder_level FROM inventory_current "
             "WHERE product_id = ?", (ln["product_id"],)).fetchone()
+        actual_after = float(new_stock["stock_on_hand"]) if new_stock else 0.0
+        actual_before = stock_before if cur.rowcount else max(stock_before, avail)
+        inventory_management.record_stock_movement(
+            conn, int(ln["product_id"]), -avail, actual_before, actual_after,
+            movement_type="ORDER_FULFILMENT", actor=actor,
+            reference_type="ORDER", reference_id=int(order_id),
+            note=f"Customer order #{order_id}, line #{ln['line_id']}",
+        )
         if new_stock and new_stock["stock_on_hand"] <= new_stock["reorder_level"]:
             low_stock.append(ln["product_id"])
 

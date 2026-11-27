@@ -34,6 +34,34 @@ CREATE TABLE IF NOT EXISTS inventory_current (
     last_updated   TEXT DEFAULT (datetime('now'))
 );
 
+
+CREATE TABLE IF NOT EXISTS product_barcodes (
+    barcode     TEXT PRIMARY KEY,
+    product_id  INTEGER NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    movement_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL REFERENCES products(product_id),
+    movement_type TEXT NOT NULL,
+    quantity      REAL NOT NULL CHECK (quantity > 0),
+    change_qty    REAL NOT NULL CHECK (change_qty <> 0),
+    stock_before  REAL NOT NULL,
+    stock_after   REAL NOT NULL CHECK (stock_after >= 0),
+    reference_type TEXT,
+    reference_id  INTEGER,
+    note          TEXT,
+    actor_email   TEXT NOT NULL DEFAULT 'system',
+    actor_name    TEXT NOT NULL DEFAULT 'System',
+    created_at    TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_product
+    ON inventory_movements(product_id, movement_id DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
+    ON inventory_movements(created_at DESC);
+
 CREATE TABLE IF NOT EXISTS daily_sales_history (
     date        TEXT NOT NULL,
     product_id  INTEGER NOT NULL REFERENCES products(product_id),
@@ -221,6 +249,7 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 
 CORE_TABLES = [
+    "inventory_movements", "product_barcodes",
     "order_line_items", "invoices_generated", "purchase_orders",
     "procurement_alerts", "ml_forecast_output", "ml_cluster_assignment",
     "bundle_recommendations", "markdown_alerts_log", "price_history_log",
