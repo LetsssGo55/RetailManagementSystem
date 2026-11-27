@@ -772,7 +772,7 @@ function renderInventoryControls(rows,movements){
     : '<option value="">No active items available</option>';
   productSelect.disabled=!rows.length;
   if(rows.some(p=>String(p.product_id)===previous))productSelect.value=previous;
-  const adjustButton=$("#adjust-form button[type="submit"]");
+  const adjustButton=$('#adjust-form button[type="submit"]');
   if(adjustButton)adjustButton.disabled=!rows.length;
   $("#active-items-count").textContent=rows.length+" active "+
     (rows.length===1?"item":"items");
