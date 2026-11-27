@@ -429,7 +429,7 @@ select.sel{border:1px solid hsl(var(--input));border-radius:var(--radius);
             </div>
           </div>
         </div>
-        <div class="card"><div class="card-h"><h3>Current stock</h3><span class="muted">All active products</span></div>
+        <div class="card"><div class="card-h"><h3>Active items</h3><span class="muted" id="active-items-count">Loading active items…</span></div>
           <div class="card-b" style="padding-top:0;overflow-x:auto"><table id="inv-table"></table></div></div>
         <div class="card"><div class="card-h"><h3>Stock movement audit log</h3>
           <span class="muted">Opening balances, manual changes and fulfilled orders</span>
@@ -593,11 +593,13 @@ $("#logout").addEventListener("click",async()=>{
 });
 
 /* ---------------- tables/charts ---------------- */
-function table(el,head,rows){
+function table(el,head,rows,emptyText="No records to display."){
+  const body=rows.length?rows.map(r=>"<tr>"+r.map(c=>
+    Array.isArray(c)?`<td><span class="badge ${c[1]}">${c[0]}</span></td>`
+    :`<td>${c}</td>`).join("")+"</tr>").join(""):
+    `<tr><td class="empty" colspan="${head.length}">${esc(emptyText)}</td></tr>`;
   el.innerHTML="<thead><tr>"+head.map(h=>`<th>${h}</th>`).join("")+
-   "</tr></thead><tbody>"+rows.map(r=>"<tr>"+r.map(c=>
-     Array.isArray(c)?`<td><span class="badge ${c[1]}">${c[0]}</span></td>`
-     :`<td>${c}</td>`).join("")+"</tr>").join("")+"</tbody>";
+    "</tr></thead><tbody>"+body+"</tbody>";
 }
 const stBadge=s=>s==="CRITICAL"?["CRITICAL","red"]:
   s==="REORDER"?["REORDER","amber"]:
@@ -759,14 +761,25 @@ async function downloadInventoryLog(){
 /* ---------------- operational inventory management ---------------- */
 let barcodeCart=[];
 function renderInventoryControls(rows,movements){
+  rows=Array.isArray(rows)?rows:[];
+  movements=Array.isArray(movements)?movements:[];
   const productSelect=$("#adjust-product");
   const previous=productSelect.value;
-  productSelect.innerHTML=rows.map(p=>'<option value="'+p.product_id+'">#'+p.product_id+
-    ' · '+esc(p.name)+' (stock '+fmt(p.stock)+')</option>').join("");
+  productSelect.innerHTML=rows.length
+    ? '<option value="">Select an active item</option>'+rows.map(p=>
+        '<option value="'+p.product_id+'">#'+p.product_id+' · '+esc(p.name)+
+        ' (stock '+fmt(p.stock)+')</option>').join("")
+    : '<option value="">No active items available</option>';
+  productSelect.disabled=!rows.length;
   if(rows.some(p=>String(p.product_id)===previous))productSelect.value=previous;
+  const adjustButton=$("#adjust-form button[type="submit"]");
+  if(adjustButton)adjustButton.disabled=!rows.length;
+  $("#active-items-count").textContent=rows.length+" active "+
+    (rows.length===1?"item":"items");
   table($("#inv-table"),["SKU","Product","Category","Barcode","Stock","Reorder","ROP","EOQ","Status"],
     rows.map(p=>[esc(p.sku),esc(p.name),esc(p.category),esc(p.barcode||"—"),
-      fmt(p.stock),fmt(p.reorder_level),fmt(p.rop),fmt(p.eoq),stBadge(p.status)]));
+      fmt(p.stock),fmt(p.reorder_level),fmt(p.rop),fmt(p.eoq),stBadge(p.status)]),
+    "No active items yet. Add a catalogue item above.");
   table($("#movement-table"),["Date / time","Product","Movement","Change","Stock before","Remaining","Buyer","Operator","Reference","Note"],
     movements.map(m=>[esc(m.created_at),esc(m.product),esc(m.movement_type),
       (Number(m.change_qty)>0?"+":"")+fmt(m.change_qty)+" "+esc(m.unit||""),
@@ -774,7 +787,28 @@ function renderInventoryControls(rows,movements){
       esc(m.customer_name||"—")+(m.customer_id?" (#"+m.customer_id+")":""),
       esc(m.actor_name)+"<br><span class='muted'>"+esc(m.actor_email)+"</span>",
       esc(m.reference_type?m.reference_type+" #"+m.reference_id:"—"),
-      esc(m.note||"—")]));
+      esc(m.note||"—")]),
+    "No stock movements have been recorded yet.");
+}
+async function refreshInventory(preferredProductId=null){
+  const [itemsResult,movementsResult]=await Promise.allSettled([
+    J("/api/inventory"),J("/api/inventory/movements")
+  ]);
+  if(itemsResult.status!=="fulfilled"||!Array.isArray(itemsResult.value)){
+    const reason=itemsResult.status==="rejected"?itemsResult.reason:null;
+    throw new Error(reason?.message||"Could not load the active inventory items.");
+  }
+  const rows=itemsResult.value;
+  const movements=movementsResult.status==="fulfilled"&&
+    Array.isArray(movementsResult.value)?movementsResult.value:[];
+  window.D=window.D||{};
+  window.D.inv=rows;
+  renderInventoryControls(rows,movements);
+  if(preferredProductId!==null&&preferredProductId!==undefined&&
+     rows.some(p=>String(p.product_id)===String(preferredProductId))){
+    $("#adjust-product").value=String(preferredProductId);
+  }
+  return rows;
 }
 function drawBarcodeCart(){
   table($("#barcode-cart"),["Barcode","Product","Qty","Available",""],barcodeCart.map((x,i)=>[
@@ -820,7 +854,8 @@ $("#barcode-order").addEventListener("click",async()=>{
 });
 $("#product-form").addEventListener("submit",async event=>{
   event.preventDefault();
-  const form=Object.fromEntries(new FormData(event.currentTarget).entries());
+  const formElement=event.currentTarget;
+  const form=Object.fromEntries(new FormData(formElement).entries());
   for(const key of ["mrp","shelf_life_days","base_margin_pct","wholesale_cost","opening_stock","reorder_level"])
     form[key]=form[key]===""?null:Number(form[key]);
   const response=await api("/api/inventory/product",{method:"POST",
@@ -828,7 +863,17 @@ $("#product-form").addEventListener("submit",async event=>{
   const data=await response.json();
   $("#product-msg").textContent=response.ok?"Product #"+data.product_id+" added.":
     (data.error||"Could not add product.");
-  if(response.ok){event.currentTarget.reset();event.currentTarget.elements.unit.value="pcs";await loadAll();}
+  if(response.ok){
+    formElement.reset();
+    formElement.elements.unit.value="pcs";
+    try{
+      await refreshInventory(data.product_id);
+      await loadAll();
+    }catch(error){
+      $("#product-msg").textContent+=" Active items were saved; refresh the dashboard if another panel is stale.";
+      console.error("Inventory refresh after product creation failed:",error);
+    }
+  }
 });
 $("#buyer-form").addEventListener("submit",async event=>{
   event.preventDefault();
@@ -844,7 +889,8 @@ $("#buyer-form").addEventListener("submit",async event=>{
 });
 $("#adjust-form").addEventListener("submit",async event=>{
   event.preventDefault();
-  const form=Object.fromEntries(new FormData(event.currentTarget).entries());
+  const formElement=event.currentTarget;
+  const form=Object.fromEntries(new FormData(formElement).entries());
   form.product_id=Number(form.product_id);form.quantity=Number(form.quantity);
   const response=await api("/api/inventory/adjust",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
@@ -852,7 +898,16 @@ $("#adjust-form").addEventListener("submit",async event=>{
   $("#adjust-msg").textContent=response.ok?
     data.product+": "+fmt(data.stock_before)+" → "+fmt(data.stock_after):
     (data.error||"Stock adjustment failed.");
-  if(response.ok){event.currentTarget.elements.quantity.value="";await loadAll();}
+  if(response.ok){
+    formElement.elements.quantity.value="";
+    try{
+      await refreshInventory(form.product_id);
+      await loadAll();
+    }catch(error){
+      $("#adjust-msg").textContent+=" Stock was saved, but another dashboard panel could not refresh.";
+      console.error("Inventory refresh after stock adjustment failed:",error);
+    }
+  }
 });
 
 /* ---------------- loaders ---------------- */
@@ -1147,6 +1202,10 @@ function go(v){
     if(b.dataset.view===v)b.classList.add("active");
     else b.classList.remove("active");});
   $("#crumb-page").textContent=names[v];
+  if(v==="inventory"){
+    refreshInventory().catch(error=>
+      console.error("Could not refresh inventory when opening the page:",error));
+  }
 }
 document.querySelectorAll(".nav-item").forEach(b=>
   b.addEventListener("click",()=>go(b.dataset.view)));
